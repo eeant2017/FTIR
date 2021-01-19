@@ -1,0 +1,98 @@
+
+#include "qpcpp.h"
+#include "thread.h"
+#include "Mod/Mod_Method.h"
+#include "Pro/pro_fpga.h"
+Q_DEFINE_THIS_FILE
+
+
+using namespace QP;
+
+class ctrl : public QP::QActive,public QThread {
+
+public:
+    ctrl();
+
+
+protected:
+    Q_STATE_DECL(initial);
+    Q_STATE_DECL(standby);
+    Q_STATE_DECL(run);
+};
+
+ctrl l_ctrl;
+QActive *const AO_Ctrl = &l_ctrl;
+
+ctrl::ctrl()
+ : QActive(Q_STATE_CAST(&ctrl::initial))
+{}
+
+Q_STATE_DEF(ctrl, initial) {
+    //${AOs::ctrl::SM::initial}
+    qDebug("initial\n");
+    return tran(&standby);
+}
+//${AOs::ctrl::SM::standby} ..................................................
+Q_STATE_DEF(ctrl, standby) {
+    QP::QState status_;
+    switch (e->sig) {
+        //${AOs::ctrl::SM::standby::START}
+        case Q_ENTRY_SIG:{
+            qDebug("ENTER_standby");
+            status_ = Q_RET_HANDLED;
+            break;
+        }
+        case START_SIG: {
+            qDebug("START_SIG");
+            status_ = tran(&run);
+            break;
+        }
+        default: {
+            status_ = super(&top);
+            break;
+        }
+    }
+    return status_;
+}
+//${AOs::ctrl::SM::run} ......................................................
+Q_STATE_DEF(ctrl, run) {
+    QP::QState status_;
+    switch (e->sig) {
+        //${AOs::ctrl::SM::run::STOP}
+        case Q_ENTRY_SIG:{
+
+            //cl_gMethod.SetMsState(0);
+            INT16U uin_Data = 1;
+            OperateRunFlag(METHOD_RUN_FLAG);
+            MemoryRead(FPGA_REG,METHOD_RUN_FLAG_addr,&uin_Data);
+            qDebug("Get METHOD_RUN_FLAG %d",uin_Data);
+            while(uin_Data == 1)
+            {
+                OperateRunFlag(METHOD_RUN_FLAG);
+                MemoryRead(FPGA_REG,METHOD_RUN_FLAG_addr,&uin_Data);
+                msleep(100);
+
+            }
+
+            cl_gMethod.DownLoadMethod();
+            qDebug("Download method");
+            cl_gMethod.SetMsState(1);
+            qDebug("MS start");
+            status_ = Q_RET_HANDLED;
+            break;
+        }
+        case STOP_SIG: {
+
+
+            qDebug("STOP_SIG");
+            status_ = tran(&standby);
+            break;
+        }
+        default: {
+            status_ = super(&top);
+            break;
+        }
+    }
+    return status_;
+}
+//$enddef${AOs::ctrl} ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

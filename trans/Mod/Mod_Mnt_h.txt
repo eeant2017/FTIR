@@ -1,0 +1,234 @@
+//==================================================================================================
+//| 文件名称 | Pub_CBuf.h
+//|--------- |--------------------------------------------------------------------------------------
+//| 文件描述 | Pub_CBuf.h所对应的头文件
+//|--------- |--------------------------------------------------------------------------------------
+//| 版权声明 | Copyright2009, 聚光科技(FPI)
+//|----------|--------------------------------------------------------------------------------------
+//|  版本    |  时间       |  作者     | 描述
+//|--------- |-------------|-----------|------------------------------------------------------------
+//|  V1.1    | 2009.04.24  | Gang      | 规范化
+//|  V1.2    | 2009.10.30  | Gang      | 准备进行单元测试
+//==================================================================================================
+#ifndef MOD_MNT_H
+#define MOD_MNT_H
+
+//--------------------------------------------------------------------------------------------------
+
+//#include <cmath.h>
+#include <string.h>
+#include "TypeDefine.h"
+
+//#include "Pub_TQeque.h"
+#include "Pub_CQhsm.h"
+
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+//#define FAULT_ALARM   1//警告
+//#define FALLT_ERROR   2//故障
+
+#define ERR_VACUUM 0x01 //真空异常
+#define ERR_PCCOMM 0x0B //PC通讯故障
+
+
+//typedef void (*DealFault)(void);
+typedef struct
+{
+        FP32 f_MinVal;//下限
+        FP32 f_MaxVal;//上限
+        FP32 f_RealVal;//当前值
+        FP32 f_Buf[32];//缓存当前值 用于计算平均值
+        INT8U uch_Index; //缓存指针，标注当前缓存的数据号 用于计算平均值
+        //INT8U uch_FaultType;//报警类型
+        //INT8U uch_FaultFlag :1;//是否有报警
+        //INT8U uch_PassFlag  :1;//是否有报警
+        //INT8U uch_DealFlag  :1;
+        //INT8U uch_FaultCon; //报警条件
+        //INT8U uch_FaultCnt;//alarm times
+        INT8U uch_FaultCode;//报警码
+        //DealFault FaultFun;//故障处理函数
+
+}STRMntAttr;
+
+/*typedef struct
+{
+        INT8U uch_FaultType;//报警类型
+        INT8U uch_FaultFlag :1;//是否有报警
+        INT8U uch_PassFlag  :1;//是否有报警
+        INT8U uch_DealFlag  :1;
+        INT8U uch_FaultCode;//报警码
+        DealFault FaultFun;//故障处理函数
+}STRMntState;*/
+
+//监控量数据结构
+typedef struct
+{
+        STRMntAttr st_CapillaryV;       //毛细管电压
+        STRMntAttr st_CapillaryI;		///毛细管电流  2016.4.18
+        STRMntAttr st_CoroI;			//电晕针电流
+        STRMntAttr st_SampleConeV;		///采样锥电压
+        STRMntAttr st_ExtractorV;		///萃取锥电压
+        STRMntAttr st_RfLenV;			///传输杆电压
+
+        STRMntAttr st_Ms1PreV;			//MS1预杆电压
+        STRMntAttr st_Ms1IonEnergy;		//MS1离子能量
+        STRMntAttr st_Ms1LM;			//MS1LM
+        STRMntAttr st_Ms1HM;			//MS1HM
+
+        STRMntAttr st_CIDEntranceV;     //CID入口电压
+        STRMntAttr st_CIDV;				//CID碰撞能量
+        STRMntAttr st_CIDEixtV;			//CID出口电压
+        STRMntAttr st_CIDOverV;			//外壁电压
+
+        STRMntAttr st_Ms2PreV;			//MS2预杆电压
+        STRMntAttr st_Ms2IonEnergy;		//MS2离子能量
+        STRMntAttr st_Ms2LM;			//MS2LM
+        STRMntAttr st_Ms2HM;			//MS2HM
+
+        STRMntAttr st_EmHighV;			//倍增器电压
+        STRMntAttr st_EmHighOffsetV;	//倍增器偏转电压
+        STRMntAttr st_EmHighEntranceV;	//倍增器入口电压
+        STRMntAttr st_Dora;				//打拿极电压
+
+        STRMntAttr st_Temperta;					//主板温度
+        STRMntAttr st_SignBoardTemperatrue;		//信号板温度
+        STRMntAttr st_DriverBoard1Temperatrue;	//驱动板1温度
+        STRMntAttr st_DriverBoard2Temperatrue;	//驱动板2温度
+
+        STRMntAttr st_HV1;	//HV1 出口透镜
+        STRMntAttr st_HV2;	//HV2
+
+        STRMntAttr st_OffsetV;//TODO未使用
+        STRMntAttr st_Ms1RF;
+        STRMntAttr st_Ms2RF;
+        STRMntAttr st_Ms1DCP;
+        STRMntAttr st_Ms1DCN;
+        STRMntAttr st_Ms2DCP;
+        STRMntAttr st_Ms2DCN;
+        STRMntAttr ESourcePositive5VDigital;
+        STRMntAttr ESourcePositive1Point2VDigital;
+        STRMntAttr ESourcePositive3Point3VDigital;
+        STRMntAttr ESourceNegative5VAnalog;
+        STRMntAttr ESourcePositive5VAnalog;
+        STRMntAttr ESourceNegative14VAnalog;
+        STRMntAttr ESourcePositive14VAnalog;
+        STRMntAttr ESourcePositive3Point3VAnalog;
+        STRMntAttr Reference2Point5VOne;
+        STRMntAttr Reference2Point5VTwo;
+        STRMntAttr Reference1Point25V;
+        STRMntAttr RFPowerESourceVoltage;
+
+        STRMntAttr st_VacuValue1;		//传输杆腔室压力
+        STRMntAttr st_VacuValue2;		//分析器腔室压力
+        STRMntAttr st_VacuValue3;		//碰撞池腔室压力
+        STRMntAttr st_VacuValue4;		//真空规4压力
+
+        STRMntAttr st_LenthDC1;	//DC2透镜电压
+        STRMntAttr st_LenthDC2;	//DC2透镜电压
+        STRMntAttr st_LenthDC3;
+        STRMntAttr st_LenthDC4;
+        STRMntAttr st_LenthDC5;
+        STRMntAttr st_LenthDC6;
+        STRMntAttr st_HEXPoleV; //六级杆电压
+        STRMntAttr st_BaffleVoltage;//挡板电压
+        STRMntAttr st_BaffleCurrunt;//挡板电流
+        STRMntAttr st_Q0out2;
+        STRMntAttr st_DC7;
+
+        STRMntAttr st_AnologSignal;//模拟量信号
+        STRMntAttr st_Rf1Current;//rf1 电流
+        STRMntAttr st_Rf2Current;//rf2 电流
+        STRMntAttr st_Rf1Vol;//rf1 电压
+        STRMntAttr st_Rf2Vol;//rf2 电压
+
+
+        STRMntAttr st_VacuCommErr;//真空归通讯无应答
+        STRMntAttr st_GateONErr; //门控开关打开报警
+        STRMntAttr st_GPMCCheckErr;//总线检测失败报警
+
+        //STRMntState st_PassDataS;
+
+} STRMnt,STRMntPtr;
+
+
+#define GET_OFFSET(x)	( &( (STRMntPtr *)0 )->x -&( (STRMntPtr *)0 )->st_CapillaryV )
+
+//typedef struct
+//{
+//	INT8U uch_WarnCode;
+//	void *pv_Data;
+//}STRWarnRecord;
+//--------------------------------------宏定义------------------------------------------------------
+
+
+class CMnt
+{
+public:
+        CMnt();
+        ~CMnt()
+        {
+
+        };
+        void Process(void);
+        void PreProcess(void);
+        void SampMntPara(void);
+        //void DealWithAlarm(STRMntAttr* st_pMntAttr);
+        //void MntPara(void);
+        STRMnt* GetMntPara()
+        {
+                return &st_mMntPara;
+        }
+        //TQeque<STRWarnRecord>* GetAlarmCodeObject()
+        //{
+                //return &q_mAlarmCode;
+        //}
+        void SetAppObject(QHsm* pcl_iHsm)
+        {
+                pcl_pvMntHsm = pcl_iHsm;
+        }
+
+        void WritePARAtoXml();
+
+        //INT8U PendAlarmCode();
+        FP32 MovingAverage(STRMntAttr &st_Sample, FP32 f_CurrentValue);//滑动平均 lyb 2017.04.27
+        void ProtectOfStandby();
+        INT8U uch_AverageNum; //平均倍数
+
+        INT8U uch_GateOnCur;//当前离子源门控状态。
+        INT8U uch_GateOnLast;//上次监离子源门控状态。
+        INT8U uch_FirstGateOnSet; //上电将告知环境板离子源门控状态
+
+        INT8U uch_PCCommCnt; //计算pc 多久没有通讯  根据监控命令进行。
+        INT8U GetAlarmNum();
+        INT8U GetErrNum();
+        INT8U GetCircuAlarmNum();
+
+protected:
+
+        //TQeque<STRWarnRecord> q_mAlarmCode;
+private:
+        STRMnt st_mMntPara;//监控变量
+
+        void InitSTRMnt(void);//初始化监控变量
+        //void CheckMntPara(STRMntAttr* st_Data);
+        //void CheckMntState(STRMntAttr* st_pMntAttr);
+        //void DealWithAlarmFun(INT8U uch_AlarmCode);//the function to deal with alarm
+        //INT8U uch_mAlarmCnt;
+        QHsm* pcl_pvMntHsm;
+
+};
+
+
+#ifdef __cplusplus
+}
+#endif
+#endif
+
+
+
+
+
+
+

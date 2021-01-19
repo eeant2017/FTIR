@@ -1,0 +1,457 @@
+//==================================================================================================
+//| 文件名称 | Mod_Env.cpp
+//|--------- |--------------------------------------------------------------------------------------
+//| 文件描述 | 环境板监控模块
+//|--------- |--------------------------------------------------------------------------------------
+//| 版权声明 | Copyright2011, 聚光科技(FPI)
+//|----------|--------------------------------------------------------------------------------------
+//|  版本    |  时间       |  作者     | 描述
+//|--------- |-------------|-----------|------------------------------------------------------------
+//|  V1.1    | 2016.8.5 |lz      | 规范化
+//==================================================================================================
+
+#include "Mod_Env.h"
+#include "Pub_Fun.h"
+#include "Pub_CCan.h"
+#include "App_App.h"
+#include "Mod_WriteDebugLog.h"
+
+STREnvMnt g_strEnvMnt;
+INT8U auch_CircuAlarmCode[10];
+
+const INT8U auch_CRCHi[256] = {
+        0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41, 0x01, 0xC0, 0x80, 0x41, 0x00, 0xC1, 0x81,
+        0x40, 0x01, 0xC0, 0x80, 0x41, 0x00, 0xC1, 0x81, 0x40, 0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0,
+        0x80, 0x41, 0x01, 0xC0, 0x80, 0x41, 0x00, 0xC1, 0x81, 0x40, 0x00, 0xC1, 0x81, 0x40, 0x01,
+        0xC0, 0x80, 0x41, 0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41, 0x01, 0xC0, 0x80, 0x41,
+        0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41, 0x00, 0xC1, 0x81, 0x40, 0x00, 0xC1, 0x81,
+        0x40, 0x01, 0xC0, 0x80, 0x41, 0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41, 0x01, 0xC0,
+        0x80, 0x41, 0x00, 0xC1, 0x81, 0x40, 0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41, 0x01,
+        0xC0, 0x80, 0x41, 0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41, 0x00, 0xC1, 0x81, 0x40,
+        0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41, 0x01, 0xC0, 0x80, 0x41, 0x00, 0xC1, 0x81,
+        0x40, 0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41, 0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0,
+        0x80, 0x41, 0x01, 0xC0, 0x80, 0x41, 0x00, 0xC1, 0x81, 0x40, 0x00, 0xC1, 0x81, 0x40, 0x01,
+        0xC0, 0x80, 0x41, 0x01, 0xC0, 0x80, 0x41, 0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41,
+        0x00, 0xC1, 0x81, 0x40, 0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41, 0x00, 0xC1, 0x81,
+        0x40, 0x01, 0xC0, 0x80, 0x41, 0x01, 0xC0, 0x80, 0x41, 0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0,
+        0x80, 0x41, 0x00, 0xC1, 0x81, 0x40, 0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41, 0x01,
+        0xC0, 0x80, 0x41, 0x00, 0xC1, 0x81, 0x40, 0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41,
+        0x00, 0xC1, 0x81, 0x40, 0x01, 0xC0, 0x80, 0x41, 0x01, 0xC0, 0x80, 0x41, 0x00, 0xC1, 0x81,
+        0x40
+} ;
+
+const INT8U auch_CRCLo[256] = {
+        0x00, 0xC0, 0xC1, 0x01, 0xC3, 0x03, 0x02, 0xC2, 0xC6, 0x06, 0x07, 0xC7, 0x05, 0xC5, 0xC4,
+        0x04, 0xCC, 0x0C, 0x0D, 0xCD, 0x0F, 0xCF, 0xCE, 0x0E, 0x0A, 0xCA, 0xCB, 0x0B, 0xC9, 0x09,
+        0x08, 0xC8, 0xD8, 0x18, 0x19, 0xD9, 0x1B, 0xDB, 0xDA, 0x1A, 0x1E, 0xDE, 0xDF, 0x1F, 0xDD,
+        0x1D, 0x1C, 0xDC, 0x14, 0xD4, 0xD5, 0x15, 0xD7, 0x17, 0x16, 0xD6, 0xD2, 0x12, 0x13, 0xD3,
+        0x11, 0xD1, 0xD0, 0x10, 0xF0, 0x30, 0x31, 0xF1, 0x33, 0xF3, 0xF2, 0x32, 0x36, 0xF6, 0xF7,
+        0x37, 0xF5, 0x35, 0x34, 0xF4, 0x3C, 0xFC, 0xFD, 0x3D, 0xFF, 0x3F, 0x3E, 0xFE, 0xFA, 0x3A,
+        0x3B, 0xFB, 0x39, 0xF9, 0xF8, 0x38, 0x28, 0xE8, 0xE9, 0x29, 0xEB, 0x2B, 0x2A, 0xEA, 0xEE,
+        0x2E, 0x2F, 0xEF, 0x2D, 0xED, 0xEC, 0x2C, 0xE4, 0x24, 0x25, 0xE5, 0x27, 0xE7, 0xE6, 0x26,
+        0x22, 0xE2, 0xE3, 0x23, 0xE1, 0x21, 0x20, 0xE0, 0xA0, 0x60, 0x61, 0xA1, 0x63, 0xA3, 0xA2,
+        0x62, 0x66, 0xA6, 0xA7, 0x67, 0xA5, 0x65, 0x64, 0xA4, 0x6C, 0xAC, 0xAD, 0x6D, 0xAF, 0x6F,
+        0x6E, 0xAE, 0xAA, 0x6A, 0x6B, 0xAB, 0x69, 0xA9, 0xA8, 0x68, 0x78, 0xB8, 0xB9, 0x79, 0xBB,
+        0x7B, 0x7A, 0xBA, 0xBE, 0x7E, 0x7F, 0xBF, 0x7D, 0xBD, 0xBC, 0x7C, 0xB4, 0x74, 0x75, 0xB5,
+        0x77, 0xB7, 0xB6, 0x76, 0x72, 0xB2, 0xB3, 0x73, 0xB1, 0x71, 0x70, 0xB0, 0x50, 0x90, 0x91,
+        0x51, 0x93, 0x53, 0x52, 0x92, 0x96, 0x56, 0x57, 0x97, 0x55, 0x95, 0x94, 0x54, 0x9C, 0x5C,
+        0x5D, 0x9D, 0x5F, 0x9F, 0x9E, 0x5E, 0x5A, 0x9A, 0x9B, 0x5B, 0x99, 0x59, 0x58, 0x98, 0x88,
+        0x48, 0x49, 0x89, 0x4B, 0x8B, 0x8A, 0x4A, 0x4E, 0x8E, 0x8F, 0x4F, 0x8D, 0x4D, 0x4C, 0x8C,
+        0x44, 0x84, 0x85, 0x45, 0x87, 0x47, 0x46, 0x86, 0x82, 0x42, 0x43, 0x83, 0x41, 0x81, 0x80,
+        0x40
+} ;
+
+//==================================================================================================
+//| 函数名称 | GetCrc16Bit()
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | 获取16位的CRC校验码
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | p_uch_Data:      需要进行crc计算的数据帧
+//|          | uin_CrcDataLen:  该数据帧的长度
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | 16位的CRC校验码
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | gao，09.3.31
+//==================================================================================================
+
+INT16U GetCrc16Bit(INT8U *p_uch_Data, INT16U uin_CrcDataLen )
+{
+        INT16U  uin_Temp;
+        INT8U uch_CRCHi = 0xFF ;
+        INT8U uch_CRCLo = 0xFF ;
+        INT8U uch_Index=0;
+
+        while (uin_CrcDataLen--)
+        {
+                //if(uin_CrcDataLen > 8000);//zzh20121027
+                //return (0);
+                uch_Index = uch_CRCHi ^ (*p_uch_Data++)&0xff ;  //&0xff
+                uch_CRCHi = uch_CRCLo ^ auch_CRCHi[uch_Index];
+                uch_CRCLo = auch_CRCLo[uch_Index] ;
+        }
+        uin_Temp = ((INT16U)uch_CRCHi << 8) | ((INT16U)uch_CRCLo);
+        return (uin_Temp);
+}
+
+void CopyDataFromAToB(INT8U *pAbuf,INT8U *pBbuf,INT16U uin_Len)
+{
+        INT16U i;
+        for(i=0; i<uin_Len; i++)
+        {
+                pBbuf[i] = pAbuf[i];
+        }
+}
+
+void ConstructFrame(COMMUNICATE *p,FRAMESTRUCT *pFrame);
+static char *g_pEnvErrInfo[] =
+{
+        "7 Pump Current  ",
+        "6 Pump	Speed  ",
+        "5 Ionic Temp  ",
+        "4 Desol Temp  ",
+        "3 Cid Flux  ",
+        "2 Curtain Flux  ",
+        "1 Neb Flux  ",
+        "0 Desol Flux  "
+};
+
+//==================================================================================================
+//| 函数名称 | GetEnvMntPtr
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | 获取环境监控量指针
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | 无
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | 环境监控量指针
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | lz 2016.8.5
+//==================================================================================================
+STREnvMnt *GetEnvMntPtr(void)
+{
+        return &g_strEnvMnt;
+}
+
+STREnvMnt *GetEnvErr(void)
+{
+        return &g_strEnvMnt;
+}
+
+//==================================================================================================
+//| 函数名称 | InitEnvMnt
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | 初始化环境监控量
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | 无
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | 操作是否成功
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | lz 2016.8.5
+//==================================================================================================
+BOOL InitEnvMnt(void)
+{
+        STREnvMnt *pEnvMnt = GetEnvMntPtr();
+
+        pEnvMnt->strPumpCurrent.f_MaxVal = 4;
+
+        pEnvMnt->strPumpSpeed.f_MinVal = 999;
+
+        return TRUE;
+}
+//==================================================================================================
+//| 函数名称 | PrintErrInfo
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | 解析环境监控量值
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | puch_Data --- 数据指针，	puch_Data --- 数据长度
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | 操作是否成功
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | lz 2016.8.8
+//==================================================================================================
+BOOL PrintErrInfo(INT8U uch_ErrFlag)
+{
+        INT8U i = 0;
+
+        if ( uch_ErrFlag == 0)
+        {
+                printf("Env no Err!\r\n");
+                return FALSE;
+        }
+
+        char *pBuf = new char[8*20];
+
+        memset(pBuf, 0 ,160);
+
+        for ( i = 0; i< 8; i++ )
+        {
+                if ( uch_ErrFlag & (1<<i))
+                {
+                        strcat(pBuf,g_pEnvErrInfo[7 - i]);
+                }
+        }
+        printf(pBuf);
+        printf("\r\n");
+
+        delete [] pBuf;
+
+        return TRUE;
+}
+
+//==================================================================================================
+//| 函数名称 | ParseEnvMnt
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | 解析环境监控量值
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | puch_Data --- 数据指针，	puch_Data --- 数据长度
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | 错误码
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | lz 2016.8.5
+//==================================================================================================
+INT8U ParseEnvMnt(INT8U *puch_Data,INT16U ush_Len)
+{
+        STREnvMnt *pEnvMnt = GetEnvMntPtr();
+
+        static INT8U uch_FirstFlag = 0;
+
+        static INT32U ul_CurTick = GetTickCount();
+
+        static INT8U uch_ErrBack = 0;
+
+        INT8U uch_PumpFlag  = 0;
+
+        if( uch_FirstFlag == 0)
+        {
+                uch_FirstFlag = 1;
+
+                InitEnvMnt();
+        }
+
+        if ( puch_Data == NULL)
+        {
+                return 0;
+        }
+
+
+        //解析报警码
+
+        for(int i=0;i<10;i++)
+        {
+
+                auch_CircuAlarmCode[i] = puch_Data[i];
+
+                //这些报警码 不仅环境板待机，主板也需要待机。
+                if (//
+                           puch_Data[i] == 0x03 //分子泵转速异常
+                        || puch_Data[i] == 0x04 //分子泵有error
+                        || puch_Data[i] == 0x0c //环境板与主板通讯异常
+                        || puch_Data[i] == 0x0e //分子泵通讯异常
+                        || puch_Data[i] == 0x0f //环境板与雾化器mfc
+                        || puch_Data[i] == 0x10 //FPGA总线
+                        || puch_Data[i] == 0x11) //环境板与反吹气MFC
+                {
+                        cl_gApp.cl_puMnt.ProtectOfStandby();
+                        CString cs_Temp;
+                        cs_Temp.Format( L"Circu Error to standby %d",puch_Data[i]);
+                        AddLogWithTime(cs_Temp);
+                }
+                else if( puch_Data[i] != 0)
+                {
+                        CString cs_Temp;
+                        cs_Temp.Format( L"Circu Error other %d",puch_Data[i]);
+                        AddLogWithTime(cs_Temp);
+                }
+
+
+        }
+
+
+        //环境板模拟量信号解析
+        pEnvMnt->strPumpCurrent.f_RealVal = DecodeFloat( puch_Data + 10);
+
+        pEnvMnt->strPumpSpeed.f_RealVal = DecodeFloat( puch_Data +18);
+
+        pEnvMnt->strPumpTemp.f_RealVal = DecodeFloat( puch_Data + 22);
+
+
+        pEnvMnt->b_CircuStandbyIO = *(puch_Data + 55);
+        if(pEnvMnt->b_CircuStandbyIO == 0x11)
+        {
+                pEnvMnt->b_CircuStandbyIO = 1;
+        }
+        else
+        {
+                pEnvMnt->b_CircuStandbyIO = 0;
+        }
+        pEnvMnt->b_N2Valve = *(puch_Data + 56);
+        if(pEnvMnt->b_N2Valve == 0x11)
+        {
+                pEnvMnt->b_N2Valve = 1;
+        }
+        else
+        {
+                pEnvMnt->b_N2Valve = 0;
+        }
+
+        pEnvMnt->b_ExhaustGasesValve = *(puch_Data + 68);
+        if(pEnvMnt->b_ExhaustGasesValve == 0x11)
+        {
+                pEnvMnt->b_ExhaustGasesValve = 1;
+        }
+        else
+        {
+                pEnvMnt->b_ExhaustGasesValve = 0;
+        }
+
+
+
+
+        //环境板报警标志位解析
+        pEnvMnt->strEnvErrDetect.ush_ErrFlag = *(INT8U *)( puch_Data + 50 + 14 +1) & 0xff; //modify 增加了标志总气开关的标志位
+
+
+
+        //if ( GetTickCount() - ul_CurTick > 4000)// BY TIME
+        if (uch_ErrBack != pEnvMnt->strEnvErrDetect.ush_ErrFlag)//by state change
+
+        {
+
+#ifdef PRINTF_PUMP_INFO
+                //printf pump speed , current
+                printf("speed is %f, current is %f\r\n",pEnvMnt->strPumpSpeed.f_RealVal, pEnvMnt->strPumpCurrent.f_RealVal);
+
+#endif
+
+
+#ifndef PRINT_PUMB_ERR
+
+                //printf("Env err check is %02x\r\n",pEnvMnt->strEnvErrDetect.uch_ErrFlag);
+
+                PrintErrInfo(pEnvMnt->strEnvErrDetect.ush_ErrFlag);
+
+#endif
+                ul_CurTick = GetTickCount();
+        }
+
+
+
+        uch_ErrBack = pEnvMnt->strEnvErrDetect.ush_ErrFlag;
+
+        return pEnvMnt->strEnvErrDetect.ush_ErrFlag;
+
+}
+
+//no more
+
+
+//==================================================================================================
+//| 函数名称 | CircuBoardCommSend
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | 向环境板发送数据
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | puch_Data --- 数据指针，	puch_Data --- 数据长度
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | 错误码
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | lz 2016.8.5
+//==================================================================================================
+
+INT8U CircuBoardCommSend(INT8U uch_Cmd,INT8U uch_AddCmd,INT8U *puch_data,INT16U uch_len)
+{
+        COMMUNICATE *pTrans = new COMMUNICATE;
+        FRAMESTRUCT *frame = new FRAMESTRUCT;
+        frame->puch_Data = new INT8U[uch_len];
+        CCan cl_Can(0xF4);
+        frame->uch_DestBuf[0] = 0xf4;
+        frame->uch_DestLen = 1;
+        frame->uch_SrcBuf[0] = 0xf5;
+        frame->uch_SrcLen = 1;
+        frame->uch_Cmd = uch_Cmd;
+        frame->uch_AddCmd = uch_AddCmd;
+        memcpy(frame->puch_Data,puch_data,uch_len);
+        frame->uin_DataLen = uch_len;
+
+        ConstructFrame(pTrans,frame);
+        cl_Can.Send(pTrans->buf,pTrans->uin_TotalTransBytes,SEND_BYSELF);
+        delete frame;
+        delete pTrans;
+        return TRUE;
+
+}
+
+
+
+//==================================================================================================
+//| 函数名称 | ConstructFrame()
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | 组建数据帧
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | p:      指向COMMUNICATE数据类型的指针
+//|          | pFrame: 指向FRAMESTRUCT数据类型的指针
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | 无
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | lyb,20170407 整理注释
+//==================================================================================================
+void ConstructFrame(COMMUNICATE *p,FRAMESTRUCT *pFrame)
+{
+        INT8U  k1,k2;
+        INT16U k3,k;
+        INT16U  uin_CrcResult;
+
+        if (pFrame == NULL || p == NULL)
+        {
+                return;
+        }
+
+        k1 = pFrame->uch_DestLen;
+        k2 = pFrame->uch_SrcLen;
+        k3 = pFrame->uin_DataLen;
+        k = k1 + k2 + k3; //一帧数据长度-12的长度
+
+        //溢出检查
+        if (k1+k2 > N_MAX_RPONTER) 			return;
+        if (k > N_COMMU_BUF-12)	   		 	return;
+
+        //等待发送完毕
+        //while (p->uch_Status != COM_IDLE)  ;//s_CheckSciRxError();
+
+        //起始标志位
+        k = 0;
+        p->buf[k++] = 0x7D;
+        p->buf[k++] = 0x7B;
+
+        //目标地址域
+        p->buf[k++] = k1;
+        CopyDataFromAToB(pFrame->uch_DestBuf, p->buf+k, k1);
+        k += k1;
+
+        //源地址域
+        p->buf[k++] = k2;
+        CopyDataFromAToB(pFrame->uch_SrcBuf,p->buf+k,k2);
+        k += k2;
+
+        //数据域
+        p->buf[k++] = pFrame->uch_Cmd;
+        p->buf[k++] = pFrame->uch_AddCmd;
+
+        EncodeUint(pFrame->uin_DataLen,p->buf+k);
+        k += 2;
+        CopyDataFromAToB(pFrame->puch_Data,p->buf+k,k3);
+        k += k3;
+
+
+        //CRC校验码
+        uin_CrcResult = GetCrc16Bit(p->buf+2,k-2);
+        EncodeUint(uin_CrcResult,p->buf+k);
+        k += 2;
+
+        //结束标志位
+        p->buf[k++] = 0x7D;
+        p->buf[k++] = 0x7D;
+
+
+        p->uin_TotalTransBytes = k;
+        p->uin_HaveTransBytes = 0;
+}
+

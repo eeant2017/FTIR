@@ -1,0 +1,1363 @@
+//==================================================================================================
+//| 文件名称 | Pro_FPGA.cpp
+//|--------- |--------------------------------------------------------------------------------------
+//| 文件描述 | FPGA接口模块
+//|--------- |--------------------------------------------------------------------------------------
+//| 版权声明 | Copyright2011, 聚光科技(FPI)
+//|----------|--------------------------------------------------------------------------------------
+//|  版本    |  时间       |  作者     | 描述
+//|--------- |-------------|-----------|------------------------------------------------------------
+//|  V1.1    | 2016.8.5 |lz      | 规范化
+//==================================================================================================
+
+
+#include "Pro_FPGA.h"
+#include "Pub_Fun.h"
+#include "Pro_Api.h"
+#include "Mod_Xml.h"
+#include "Mod_Method.h"
+#include "App_App.h"
+#include "Mod_Mnt.h"
+
+
+//printf use
+//#pragma comment(linker, "/subsystem:\"CONSOLE\" /entry:\"WinMainCRTStartup\"")
+
+
+STRSetVoltageList g_strSetVoltageList[MAX_VOL_CHANNEL] =
+{
+        //style  Y= ( ( (x*f_k) *f_a) +f_b) *f_c
+
+        //                                          k				a					b		c
+        DA_AD5546_1_addr,	DA_AD5546_1_syn,	0,	-1.0,			1/200.0,			2.05,	65535/4.1,	0x02,	0x00,	1,	ARM_CONE_V,		JUNK_CONE_V,	"采样锥电压",
+        DA_AD5546_2_addr,	DA_AD5546_2_syn,	0,	-1.0,			1/60.0,			    2.05,	65535/4.1,	0x0a,	0x00,	1,	ARM_CLN_V,		JUNK_COLN_V,	"碰撞池碰撞能量",
+        //U146
+        DA_DAC124_11_addr,	DA_DAC124_11_syn,	0,	-1.0,			1/60.0,				2.05,	4095.0/4.1,	0x09,	0x10,	1,	ARM_CID_IN_V,	JUNK_CID_IN_V,	"碰撞池入口电压",
+        DA_DAC124_15_addr,	DA_DAC124_15_syn,	0,	-1.0,			1/60.0,				2.05,	4095.0/4.1,	0x0b,	0x50,	1,	ARM_CID_OUT_V,	JUNK_CID_OUT_V,	"碰撞池出口电压",
+        DA_DAC124_19_addr,	DA_DAC124_19_syn,	0,	-1.0,			1/6.0,				2.05,	4095.0/4.1,	0x04,	0x90,	1,	ARM_ROD_V,		JUNK_ROD_V,		"TR3", //传输杆电压
+        DA_DAC124_1d_addr,	DA_DAC124_1d_syn,	0,	-1.0,			1/60.0,				2.05,	4095.0/4.1,	0x03,	0xd0,	1,	ARM_EXTRA_V,	JUNK_EXTRA_V,	"L1",//萃取锥电压
+        //U158
+        DA_DAC124_21_addr,	DA_DAC124_21_syn,	0,	1/3200.0,		4095.0,				0.0,	1/2.5,		0x13,	0x10,	1,	ARM_EM_IN_V,	JUNK_EM_IN_V,	"检测器入口电压",
+        DA_DAC124_25_addr,	DA_DAC124_25_syn,	0,	1/3200.0,		4095.0,				0.0,	1/2.5,		0x00,	0x50,	1,	ARM_CAPL_V,		JUNK_CAPL_V,	"毛细管高压",
+        DA_DAC124_29_addr,	DA_DAC124_29_syn,	0,	1/40.0	,		4095.0,				0.0,	1/2.5,		0x01,	0x90,	1,	ARM_CORO_V,		JUNK_CORO_V,	"电晕针电流",
+        DA_DAC124_2d_addr,	DA_DAC124_2d_syn,	0,	1/3200.0,		4095.0,				0.0,	1/2.5,		0x11,	0xd0,	1,	ARM_EM_V,		JUNK_EM_V,		"检测器倍增电压",
+
+        DA_LTC8043_1_addr,	DA_LTC8043_1_syn,	0,	-2.2/10.0,		1/MSRF_REFERENCE,	1.0,	2047.5,		0x06,	0x00,	1,	ARM_MS1_ION_V,	JUNK_MS1_ION_V,	"ms1离子能量",
+        DA_LTC8043_2_addr,	DA_LTC8043_2_syn,	0,	-0.6/10.0,		1/MSRF_REFERENCE,	1.0,	2047.5,		0x0e,	0x00,	1,	ARM_MS2_ION_V,	JUNK_MS2_ION_V,	"ms2离子能量",
+        DA_LTC8043_3_addr,	DA_LTC8043_3_syn,	0,	-1.0,			1/60.0,				2.05,	4095.0/4.1,	0X0D,	0X00,	1,	ARM_MS2_PRE_V,	JUNK_MS2_PRE_V,	"ms2预杆电压",
+        DA_LTC8043_4_addr,	DA_LTC8043_4_syn,	0,	1.0,			1/200.0,			2.05,	4095.0/4.1,	0x12,	0x00,	1,	ARM_EM_TURN_V,	JUNK_EM_TURN_V,	"检测器偏转电压",
+
+        DA_LTC8043_5_addr,	DA_LTC8043_5_syn,	0,  -1.0,			1/6.0,				2.05,	4095.0/4.1,	0x14,	0x00,	1,	ARM_HV1_V,		JUNK_HV1_V,		"L3", //传输杆出口透镜
+        DA_LTC8043_6_addr,	DA_LTC8043_6_syn,	0,	-1.0,			1/60.0,				2.05,	4095.0/4.1,	0x05,	0x00,	1,	ARM_MS1_PRE_V,	JUNK_MS1_PRE_V,	"ms1预杆电压",
+
+        DA_LTC8043_7_addr,	DA_LTC8043_7_syn,	0,	1.0,			4095.0,				0.0,	1/300.0,	0X08,	0X00,	1,	ARM_MS1_HM_V,	JUNK_MS1_HM_V,	"MS1HM",
+        DA_LTC8043_8_addr,	DA_LTC8043_8_syn,	0,	1.0,			4095.0,				0.0,	1/300.0,	0x07,	0x00,	1,	ARM_MS1_LM_V,	JUNK_MS1_LM_V,	"MS1LM",
+        DA_LTC8043_9_addr,	DA_LTC8043_9_syn,	0,	1.0,			4095.0,				0.0,	1/300.0,	0x10,	0x00,	1,	ARM_MS2_HM_V,	JUNK_MS2_HM_V,	"MS2HM",
+        DA_LTC8043_10_addr,	DA_LTC8043_10_syn,	0,	1.0,			4095.0,				0.0,	1/300.0,	0x0f,	0x00,	1,	ARM_MS2_LM_V,	JUNK_MS2_LM_V,	"MS2LM",
+
+        //U248
+        DA_DAC124_31_addr,	DA_DAC124_31_syn,	0,	-1.0,			1/200.0,		    2.05,	4095.0/4.1,	0x18,	0x10,	1,	ARM_DC1_V,		JUNK_DC1_V,	"TR1外壁", // Focus DC1
+        DA_DAC124_35_addr,	DA_DAC124_35_syn,	0,	-1.0,			1/60.0,				2.05,	4095.0/4.1,	0x19,	0x50,	1,	ARM_DC2_V,		JUNK_DC2_V,	"TR1",  //Qjet DC2
+        DA_DAC124_39_addr,	DA_DAC124_39_syn,	0,	-1.0,			1/6.0,				2.05,	4095.0/4.1,	0x1a,	0x90,	1,	ARM_DC3_V,		JUNK_DC3_V,	"TR2",   // Q00 DC3
+        DA_DAC124_3d_addr,	DA_DAC124_3d_syn,	0,	-1.0,			1/6.0,				2.05,	4095.0/4.1,	0x1b,	0xd0,	1,	ARM_DC4_V,		JUNK_DC4_V,	"L2", //Q00 out DC4
+
+        DA_DAC124_41_addr,	DA_DAC124_41_syn,	0,	1/3200.0,		4095.0,				0.0,	1/4.1,	    0x21,	0x10,	0,	ARM_NULL_V,		JUNK_NULL_V,	"dc7",
+        DA_DAC124_45_addr,	DA_DAC124_45_syn,	0,	1/3200.0,		4095.0,				0.0,	1/4.1,	    0x20,	0x50,	0,	ARM_NULL_V,		JUNK_NULL_V,	"q0out2",
+        DA_DAC124_49_addr,	DA_DAC124_49_syn,	0,	1/3200.0,		4095.0,				0.0,	1/4.1,	    0x1f,	0x90,	1,	ARM_DA_CP_V,	JUNK_DA_CP_V,	"da_cp", //挡板电压
+        DA_DAC124_4d_addr,	DA_DAC124_4d_syn,	0,	1/3200.0,		4095.0,				0.0,	1/4.1,	    0x22,	0xd0,	0,	ARM_NULL_V,		JUNK_NULL_V,	"预留硬件没有引出来",
+
+        ION_SWITCH_MS_addr,	ION_SWITCH_MS_syn,	0,	1.0,			1.0,				0.0,	1.0,		0x16,	0x00,	0,	ARM_NULL_V,		JUNK_NULL_V,	"正负离子切换时间"
+
+};
+
+ STRCheckVoltageList g_strVoltageCheckList[MAX_VOL_CHANNEL - 1]=
+ {
+        //index,	mapoffset																		read,		write,		delta	timedly	alarmcode
+        0,		&( (STRMntPtr *) 0)->st_SampleConeV		- &( (STRMntPtr *)0 )->st_CapillaryV,		0.0,	0,	0.0,	0,	1.5,	3000,	0xa0, "采样锥电压",      //ok
+        1,		&( (STRMntPtr *) 0)->st_CIDV			- &( (STRMntPtr *)0 )->st_CapillaryV,		0.0,	0,	0.0,	0,	1.5,	3000,	0xa1, "碰撞池碰撞能量",  //ok
+
+        2,		&( (STRMntPtr *) 0)->st_CIDEntranceV	- &( (STRMntPtr *)0 )->st_CapillaryV,		0.0,	0,	0.0,	0,	1.5,	3000,	0xa2, "碰撞池入口电压",  //ok
+        3,		&( (STRMntPtr *) 0)->st_CIDEixtV		- &( (STRMntPtr *)0 )->st_CapillaryV,		0.0,	0,	0.0,	0,	1.5,	3000,	0xa3, "碰撞池出口电压",  //ok
+        4,		&( (STRMntPtr *) 0)->st_RfLenV			- &( (STRMntPtr *)0 )->st_CapillaryV,		0.0,	0,	0.0,	0,	1.5,	3000,	0xa4, "TR3电压",	//"传输杆电压", ok
+        5,		&( (STRMntPtr *) 0)->st_ExtractorV		- &( (STRMntPtr *)0 )->st_CapillaryV,		0.0,	0,	0.0,	0,	1.5,	3000,	0xa5, "L1电压",	//"萃取锥电压", ok
+        //U158
+        6,		&( (STRMntPtr *) 0)->st_EmHighEntranceV - &( (STRMntPtr *)0 )->st_CapillaryV,		0.0,	0,	0.0,	0,	100,	3000,	0xa6, "检测器入口电压", //ok
+        7,		&( (STRMntPtr *) 0)->st_CapillaryV		- &( (STRMntPtr *)0 )->st_CapillaryV,		0.0,	0,	0.0,	0,	100,	3000,	0xa7, "毛细管高压", //ok
+        8,		0xffff,																				0.0,	0,	0.0,	0,	1.5,	3000,	0x00, "电晕针电流",  //取消
+        9,		&( (STRMntPtr *) 0)->st_EmHighV		    - &( (STRMntPtr *)0 )->st_CapillaryV,		0.0,	0,	0.0,	0,	100,	3000,	0xa9, "检测器倍增电压",  //ok
+
+        10,		&( (STRMntPtr *) 0)->st_Ms1IonEnergy	- &( (STRMntPtr *)0 )->st_CapillaryV,		0.0,	0,	0.0,	0,	15,		3000,	0xaa, "ms1离子能量",  //ok
+        11,		&( (STRMntPtr *) 0)->st_Ms2IonEnergy	- &( (STRMntPtr *)0 )->st_CapillaryV,		0.0,	0,	0.0,	0,	15,		3000,	0xab, "ms2离子能量",  //ok
+        12,		&( (STRMntPtr *) 0)->st_Ms2PreV			- &( (STRMntPtr *)0 )->st_CapillaryV,		0.0,	0,	0.0,	0,	1.5,	3000,	0xac, "ms2预杆电压",  //ok
+        13,		&( (STRMntPtr *) 0)->st_EmHighOffsetV	- &( (STRMntPtr *)0 )->st_CapillaryV,		0.0,	0,	0.0,	0,	10.0,	3000,	0xad, "检测器偏转电压", //ok
+
+        14,		&( (STRMntPtr *) 0)->st_HV1				- &( (STRMntPtr *)0 )->st_CapillaryV,		0.0,	0,	0.0,	0,	1.5,	3000,	0xae, "L3电压",   //ok
+        15,		&( (STRMntPtr *) 0)->st_Ms1PreV			- &( (STRMntPtr *)0 )->st_CapillaryV,		0.0,	0,	0.0,	0,	1.5,	3000,	0xaf, "ms1预杆电压", //ok
+
+        16,		0xffff,																				0.0,	0,	0.0,	0,	1.5,	3000,	0x00, "MS1HM",
+        17,		0xffff,																				0.0,	0,	0.0,	0,	1.5,	3000,	0x00, "MS1LM",
+        18,		0xffff,																				0.0,	0,	0.0,	0,	1.5,	3000,	0x00, "MS2HM",
+        19,		0xffff,																				0.0,	0,	0.0,	0,	1.5,	3000,	0x00, "MS2LM",
+
+        //U248
+        20,		&( (STRMntPtr *) 0)->st_LenthDC1		- &( (STRMntPtr *)0 )->st_CapillaryV,		0.0,	0,	0.0,	0,	1.5,	3000,	0xb1, "TR1外壁",
+        21,		&( (STRMntPtr *) 0)->st_LenthDC2		- &( (STRMntPtr *)0 )->st_CapillaryV,		0.0,	0,	0.0,	0,	1.5,	3000,	0xb2, "TR1",
+        22,		&( (STRMntPtr *) 0)->st_LenthDC3		- &( (STRMntPtr *)0 )->st_CapillaryV,		0.0,	0,	0.0,	0,	1.5,	3000,	0xb3, "TR2",
+        23,		&( (STRMntPtr *) 0)->st_LenthDC4		- &( (STRMntPtr *)0 )->st_CapillaryV,		0.0,	0,	0.0,	0,	1.5,	3000,	0xb4, "L2",
+
+        //U248
+        24,		0xffff,																				0.0,	0,	0.0,	0,	1.5,	3000,	0xb5, "dc7",
+        25,		&( (STRMntPtr *) 0)->st_Q0out2			- &( (STRMntPtr *)0 )->st_CapillaryV,		0.0,	0,	0.0,	0,	1.5,	3000,	0xb6, "q0out2",
+        26,		&( (STRMntPtr *) 0)->st_BaffleVoltage	- &( (STRMntPtr *)0 )->st_CapillaryV,		0.0,	0,	0.0,	0,	300,	3000,	0xb7, "da_cp",
+        27,		0xffff,																				0.0,	0,	0.0,	0,	1.5,	3000,	0x00, "预留硬件没有引出来"
+ };
+
+ STRXMLPARA g_strxmlparalist[65]=
+ {
+         0, "f_max0","f_min0","f_default0","f_setvk0","f_setvb0","f_refk0","f_refb0","f_setvkp0","f_setvbp0","f_refkp0","f_refbp0",
+         1, "f_max1","f_min1","f_default1","f_setvk1","f_setvb1","f_refk1","f_refb1","f_setvkp1","f_setvbp1","f_refkp1","f_refbp1",
+         2, "f_max2","f_min2","f_default2","f_setvk2","f_setvb2","f_refk2","f_refb2","f_setvkp2","f_setvbp2","f_refkp2","f_refbp2",
+         3, "f_max3","f_min3","f_default3","f_setvk3","f_setvb3","f_refk3","f_refb3","f_setvkp3","f_setvbp3","f_refkp3","f_refbp3",
+         4, "f_max4","f_min4","f_default4","f_setvk4","f_setvb4","f_refk4","f_refb4","f_setvkp4","f_setvbp4","f_refkp4","f_refbp4",
+         5, "f_max5","f_min5","f_default5","f_setvk5","f_setvb5","f_refk5","f_refb5","f_setvkp5","f_setvbp5","f_refkp5","f_refbp5",
+         6, "f_max6","f_min6","f_default6","f_setvk6","f_setvb6","f_refk6","f_refb6","f_setvkp6","f_setvbp6","f_refkp6","f_refbp6",
+         7, "f_max7","f_min7","f_default7","f_setvk7","f_setvb7","f_refk7","f_refb7","f_setvkp7","f_setvbp7","f_refkp7","f_refbp7",
+         8, "f_max8","f_min8","f_default8","f_setvk8","f_setvb8","f_refk8","f_refb8","f_setvkp8","f_setvbp8","f_refkp8","f_refbp8",
+         9, "f_max9","f_min9","f_default9","f_setvk9","f_setvb9","f_refk9","f_refb9","f_setvkp9","f_setvbp9","f_refkp9","f_refbp9",
+         10, "f_max10","f_min10","f_default10","f_setvk10","f_setvb10","f_refk10","f_refb10","f_setvkp10","f_setvbp10","f_refkp10","f_refbp10",
+         11, "f_max11","f_min11","f_default11","f_setvk11","f_setvb11","f_refk11","f_refb11","f_setvkp11","f_setvbp11","f_refkp11","f_refbp11",
+         12, "f_max12","f_min12","f_default12","f_setvk12","f_setvb12","f_refk12","f_refb12","f_setvkp12","f_setvbp12","f_refkp12","f_refbp12",
+         13, "f_max13","f_min13","f_default13","f_setvk13","f_setvb13","f_refk13","f_refb13","f_setvkp13","f_setvbp13","f_refkp13","f_refbp13",
+         14, "f_max14","f_min14","f_default14","f_setvk14","f_setvb14","f_refk14","f_refb14","f_setvkp14","f_setvbp14","f_refkp14","f_refbp14",
+         15, "f_max15","f_min15","f_default15","f_setvk15","f_setvb15","f_refk15","f_refb15","f_setvkp15","f_setvbp15","f_refkp15","f_refbp15",
+         16, "f_max16","f_min16","f_default16","f_setvk16","f_setvb16","f_refk16","f_refb16","f_setvkp16","f_setvbp16","f_refkp16","f_refbp16",
+         17, "f_max17","f_min17","f_default17","f_setvk17","f_setvb17","f_refk17","f_refb17","f_setvkp17","f_setvbp17","f_refkp17","f_refbp17",
+         18, "f_max18","f_min18","f_default18","f_setvk18","f_setvb18","f_refk18","f_refb18","f_setvkp18","f_setvbp18","f_refkp18","f_refbp18",
+         19, "f_max19","f_min19","f_default19","f_setvk19","f_setvb19","f_refk19","f_refb19","f_setvkp19","f_setvbp19","f_refkp19","f_refbp19",
+         20, "f_max20","f_min20","f_default20","f_setvk20","f_setvb20","f_refk20","f_refb20","f_setvkp20","f_setvbp20","f_refkp20","f_refbp20",
+         21, "f_max21","f_min21","f_default21","f_setvk21","f_setvb21","f_refk21","f_refb21","f_setvkp21","f_setvbp21","f_refkp21","f_refbp21",
+         22, "f_max22","f_min22","f_default22","f_setvk22","f_setvb22","f_refk22","f_refb22","f_setvkp22","f_setvbp22","f_refkp22","f_refbp22",
+         23, "f_max23","f_min23","f_default23","f_setvk23","f_setvb23","f_refk23","f_refb23","f_setvkp23","f_setvbp23","f_refkp23","f_refbp23",
+         24, "f_max24","f_min24","f_default24","f_setvk24","f_setvb24","f_refk24","f_refb24","f_setvkp24","f_setvbp24","f_refkp24","f_refbp24",
+         25, "f_max25","f_min25","f_default25","f_setvk25","f_setvb25","f_refk25","f_refb25","f_setvkp25","f_setvbp25","f_refkp25","f_refbp25",
+         26, "f_max26","f_min26","f_default26","f_setvk26","f_setvb26","f_refk26","f_refb26","f_setvkp26","f_setvbp26","f_refkp26","f_refbp26",
+         27, "f_max27","f_min27","f_default27","f_setvk27","f_setvb27","f_refk27","f_refb27","f_setvkp27","f_setvbp27","f_refkp27","f_refbp27",
+         28, "f_max28","f_min28","f_default28","f_setvk28","f_setvb28","f_refk28","f_refb28","f_setvkp28","f_setvbp28","f_refkp28","f_refbp28",
+         29, "f_max29","f_min29","f_default29","f_setvk29","f_setvb29","f_refk29","f_refb29","f_setvkp29","f_setvbp29","f_refkp29","f_refbp29",
+         30, "f_max30","f_min30","f_default30","f_setvk30","f_setvb30","f_refk30","f_refb30","f_setvkp30","f_setvbp30","f_refkp30","f_refbp30",
+         31, "f_max31","f_min31","f_default31","f_setvk31","f_setvb31","f_refk31","f_refb31","f_setvkp31","f_setvbp31","f_refkp31","f_refbp31",
+         32, "f_max32","f_min32","f_default32","f_setvk32","f_setvb32","f_refk32","f_refb32","f_setvkp32","f_setvbp32","f_refkp32","f_refbp32",
+         33, "f_max33","f_min33","f_default33","f_setvk33","f_setvb33","f_refk33","f_refb33","f_setvkp33","f_setvbp33","f_refkp33","f_refbp33",
+         34, "f_max34","f_min34","f_default34","f_setvk34","f_setvb34","f_refk34","f_refb34","f_setvkp34","f_setvbp34","f_refkp34","f_refbp34",
+         35, "f_max35","f_min35","f_default35","f_setvk35","f_setvb35","f_refk35","f_refb35","f_setvkp35","f_setvbp35","f_refkp35","f_refbp35",
+         36, "f_max36","f_min36","f_default36","f_setvk36","f_setvb36","f_refk36","f_refb36","f_setvkp36","f_setvbp36","f_refkp36","f_refbp36",
+         37, "f_max37","f_min37","f_default37","f_setvk37","f_setvb37","f_refk37","f_refb37","f_setvkp37","f_setvbp37","f_refkp37","f_refbp37",
+         38, "f_max38","f_min38","f_default38","f_setvk38","f_setvb38","f_refk38","f_refb38","f_setvkp38","f_setvbp38","f_refkp38","f_refbp38",
+         39, "f_max39","f_min39","f_default39","f_setvk39","f_setvb39","f_refk39","f_refb39","f_setvkp39","f_setvbp39","f_refkp39","f_refbp39",
+         40, "f_max40","f_min40","f_default40","f_setvk40","f_setvb40","f_refk40","f_refb40","f_setvkp40","f_setvbp40","f_refkp40","f_refbp40",
+         41, "f_max41","f_min41","f_default41","f_setvk41","f_setvb41","f_refk41","f_refb41","f_setvkp41","f_setvbp41","f_refkp41","f_refbp41",
+         42, "f_max42","f_min42","f_default42","f_setvk42","f_setvb42","f_refk42","f_refb42","f_setvkp42","f_setvbp42","f_refkp42","f_refbp42",
+         43, "f_max43","f_min43","f_default43","f_setvk43","f_setvb43","f_refk43","f_refb43","f_setvkp43","f_setvbp43","f_refkp43","f_refbp43",
+         44, "f_max44","f_min44","f_default44","f_setvk44","f_setvb44","f_refk44","f_refb44","f_setvkp44","f_setvbp44","f_refkp44","f_refbp44",
+         45, "f_max45","f_min45","f_default45","f_setvk45","f_setvb45","f_refk45","f_refb45","f_setvkp45","f_setvbp45","f_refkp45","f_refbp45",
+         46, "f_max46","f_min46","f_default46","f_setvk46","f_setvb46","f_refk46","f_refb46","f_setvkp46","f_setvbp46","f_refkp46","f_refbp46",
+         47, "f_max47","f_min47","f_default47","f_setvk47","f_setvb47","f_refk47","f_refb47","f_setvkp47","f_setvbp47","f_refkp47","f_refbp47",
+         48, "f_max48","f_min48","f_default48","f_setvk48","f_setvb48","f_refk48","f_refb48","f_setvkp48","f_setvbp48","f_refkp48","f_refbp48",
+         49, "f_max49","f_min49","f_default49","f_setvk49","f_setvb49","f_refk49","f_refb49","f_setvkp49","f_setvbp49","f_refkp49","f_refbp49",
+         50, "f_max50","f_min50","f_default50","f_setvk50","f_setvb50","f_refk50","f_refb50","f_setvkp50","f_setvbp50","f_refkp50","f_refbp50",
+         51, "f_max51","f_min51","f_default51","f_setvk51","f_setvb51","f_refk51","f_refb51","f_setvkp51","f_setvbp51","f_refkp51","f_refbp51",
+         52, "f_max52","f_min52","f_default52","f_setvk52","f_setvb52","f_refk52","f_refb52","f_setvkp52","f_setvbp52","f_refkp52","f_refbp52",
+         53, "f_max53","f_min53","f_default53","f_setvk53","f_setvb53","f_refk53","f_refb53","f_setvkp53","f_setvbp53","f_refkp53","f_refbp53",
+         54, "f_max54","f_min54","f_default54","f_setvk54","f_setvb54","f_refk54","f_refb54","f_setvkp54","f_setvbp54","f_refkp54","f_refbp54",
+         55, "f_max55","f_min55","f_default55","f_setvk55","f_setvb55","f_refk55","f_refb55","f_setvkp55","f_setvbp55","f_refkp55","f_refbp55",
+         56, "f_max56","f_min56","f_default56","f_setvk56","f_setvb56","f_refk56","f_refb56","f_setvkp56","f_setvbp56","f_refkp56","f_refbp56",
+         57, "f_max57","f_min57","f_default57","f_setvk57","f_setvb57","f_refk57","f_refb57","f_setvkp57","f_setvbp57","f_refkp57","f_refbp57",
+         58, "f_max58","f_min58","f_default58","f_setvk58","f_setvb58","f_refk58","f_refb58","f_setvkp58","f_setvbp58","f_refkp58","f_refbp58",
+         59, "f_max59","f_min59","f_default59","f_setvk59","f_setvb59","f_refk59","f_refb59","f_setvkp59","f_setvbp59","f_refkp59","f_refbp59",
+         60, "f_max60","f_min60","f_default60","f_setvk60","f_setvb60","f_refk60","f_refb60","f_setvkp60","f_setvbp60","f_refkp60","f_refbp60",
+         61, "f_max61","f_min61","f_default61","f_setvk61","f_setvb61","f_refk61","f_refb61","f_setvkp61","f_setvbp61","f_refkp61","f_refbp61",
+         62, "f_max62","f_min62","f_default62","f_setvk62","f_setvb62","f_refk62","f_refb62","f_setvkp62","f_setvbp62","f_refkp62","f_refbp62",
+         63, "f_max63","f_min63","f_default63","f_setvk63","f_setvb63","f_refk63","f_refb63","f_setvkp63","f_setvbp63","f_refkp63","f_refbp63",
+         64, "f_max64","f_min64","f_default64","f_setvk64","f_setvb64","f_refk64","f_refb64","f_setvkp64","f_setvbp64","f_refkp64","f_refbp64",
+ };
+
+
+ //==================================================================================================
+ //| 函数名称 | GetSetVoltageListPtr
+ //|----------|--------------------------------------------------------------------------------------
+ //| 函数功能 | 获取设定电压表首地址
+ //|----------|--------------------------------------------------------------------------------------
+ //| 输入参数 | 无
+ //|----------|--------------------------------------------------------------------------------------
+ //| 返回参数 | 设定电压表首地址
+ //|----------|--------------------------------------------------------------------------------------
+ //| 函数设计 | 李壮 2016.8.5
+ //==================================================================================================
+STRSetVoltageList *GetSetVoltageListPtr(void)
+{
+        return &g_strSetVoltageList[0];
+}
+
+//==================================================================================================
+//| 函数名称 | GetCheckVoltageListPtr
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | 获取校验电压表首地址
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | 无
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | 校验电压表首地址
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | 李壮 2016.8.5
+//==================================================================================================
+STRCheckVoltageList *GetCheckVoltageListPtr(void)
+{
+        return &g_strVoltageCheckList[0];
+}
+
+ //==================================================================================================
+ //| 函数名称 | FindSetVolListPtr
+ //|----------|--------------------------------------------------------------------------------------
+ //| 函数功能 | 根据协议号寻找电压配置表绝对地址
+ //|----------|--------------------------------------------------------------------------------------
+ //| 输入参数 | uch_ProctolFlag -- 上位机协议号
+ //|----------|--------------------------------------------------------------------------------------
+ //| 返回参数 | 协议号对应电压配置表指针
+ //|----------|--------------------------------------------------------------------------------------
+ //| 函数设计 | 李壮 2016.4.13
+ //==================================================================================================
+STRSetVoltageList *FindSetVolListPtr(INT8U uch_ProctolFlag)
+{
+        STRSetVoltageList *pstr;
+
+        pstr = GetSetVoltageListPtr();
+
+        for (INT8U i =0 ; i< MAX_VOL_CHANNEL; i++)
+        {
+                if( pstr[i].uch_ProctolFlag == uch_ProctolFlag)
+                        return (pstr + i);
+        }
+
+        return NULL;
+
+}
+
+//==================================================================================================
+//| 函数名称 | FindSetVolListIndex
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | 根据协议号寻找电压配置表绝对地址
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | pstrList -- ARM透镜电压设定表基址，puch_Method，PC数据基址， uin_RamAddr -- FPGA基址
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | 偏移量
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | 李壮 2016.4.13
+//==================================================================================================
+INT16U FindSetVolListIndex(INT8U uch_ProctolFlag)
+{
+        STRSetVoltageList *pstr = GetSetVoltageListPtr();
+
+        for (INT8U i =0 ; i< MAX_VOL_CHANNEL-1; i++)
+        {
+                if(  pstr[i].uch_ProctolFlag == uch_ProctolFlag )
+                        return i;
+        }
+
+        return 0xffff;
+}
+
+
+//==================================================================================================
+//| 函数名称 | MethodVolSet
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | 将上位机方法电压数据写入FPGA
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | pstrList -- ARM透镜电压设定表基址，puch_Method，PC数据基址， uin_RamAddr -- FPGA基址
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | 无
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | 李壮 2016.7.7
+//==================================================================================================
+void MethodVolSet(INT8U *puch_Method ,INT32U uin_RamAddr)
+{
+        INT8U uch_Size = 0;;
+
+        INT8U uch_MethodEnable = 0;
+        INT8U uch_ARM_Num = 0;
+        INT8U uch_JUNK_Num = 0;
+
+        STRSetVoltageList *pCurStrList = NULL;
+
+        FP32 f_PcData =0;
+        FP32 f_FirstData = 0;
+        FP32 f_SecondData = 0;
+
+        INT16U ush_TempData = 0;
+        INT16U ush_FpgaData = 0;
+
+        STRSetVoltageList *pStrSetVol = GetSetVoltageListPtr();
+
+        uch_Size = MAX_VOL_CHANNEL; //sizeof(pstrList) / (sizeof(STRVoltageList));
+
+        for ( INT8U i =0; i< uch_Size; i++)
+        {
+                pCurStrList = pStrSetVol + i;
+
+                if(  pCurStrList->uch_MethodEnable == 1 )
+                {
+                        pCurStrList->uch_CmdSetFlag = 1;
+
+                        //获取ARM偏移量
+                        uch_ARM_Num = pCurStrList->uch_ARM_Num;
+                        //获取FPGA偏移量
+                        uch_JUNK_Num = pCurStrList->uch_JUNK_Num;
+                        //根据ARM偏移量获取pc设定值
+                        f_PcData = DecodeFloat( &puch_Method[uch_ARM_Num]);
+
+                        //将设定值写入设定缓存表并记录设定时刻 2016.8.2
+                        UpdateVoltageCheckListWrite( i,	f_PcData, GetTickCount() );
+
+                        //根据系数计算一级公式计算值
+                        f_FirstData = f_PcData * pCurStrList->f_k;
+                        //根据系数计算二级公式计算值
+                        f_SecondData =( f_FirstData * pCurStrList->f_a + pCurStrList->f_b ) * pCurStrList->f_c;
+                        //将二级公式计算值转换成整形无符号
+                        ush_TempData = (INT16U)f_SecondData;
+                        //将计算出数据连同掩码一起写入FPGA
+                        ush_FpgaData = ush_TempData | ( pCurStrList->uch_Mask <<8);
+
+
+                        MemoryWrite(DSRAM_RECT,uin_RamAddr + uch_JUNK_Num,	&ush_FpgaData);
+                }
+        }
+
+}
+
+
+//==================================================================================================
+//| 函数名称 | UpdateVoltageCheckListRead
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | 更新读取设定电压反馈表
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | pstrMnt -- 反馈表首地址 ， ul_Tick -- 最新读取时间点
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | 无
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | 李壮 2016.8.5
+//==================================================================================================
+
+void UpdateVoltageCheckListRead(STRMnt *pstrMnt,INT32U ul_Tick)
+{
+        INT16U ush_Offset = 0;
+
+        STRCheckVoltageList *pstrCheckVol = GetCheckVoltageListPtr();
+
+        if ( pstrMnt == NULL)
+        {
+                return;
+        }
+
+        for (INT8U i =0; i< MAX_VOL_CHANNEL- 1; i++)
+        {
+                ush_Offset = pstrCheckVol[i].ush_MemMapOffset;
+
+                //偏移量是否有效
+                if( ush_Offset == 0xffff)
+                {
+                        continue;
+                }
+
+
+                FP32 f_RealVal = 0;
+
+                //ms1 ion
+                if( pstrCheckVol[i].ush_VoltageListIndex == 10 )
+                {
+                        f_RealVal = (pstrMnt->st_Ms1DCP.f_RealVal +  pstrMnt->st_Ms1DCN.f_RealVal)/2.0f;
+                }
+                //ms2 ion
+                else if( pstrCheckVol[i].ush_VoltageListIndex == 11)
+                {
+                        f_RealVal = (pstrMnt->st_Ms2DCP.f_RealVal +  pstrMnt->st_Ms2DCN.f_RealVal)/2.0f;
+                }
+                else
+                {
+                        f_RealVal = ( (STRMntAttr *)( (STRMntAttr *)pstrMnt + ush_Offset) )->f_RealVal;
+                }
+
+                pstrCheckVol[i].f_ReadValue = f_RealVal;
+
+                //printf("i is %d, value is %f\r\n",i, pstrCheckVol[i].f_ReadValue);
+
+                pstrCheckVol[i].ul_ReadTime = ul_Tick;
+        }
+}
+
+//==================================================================================================
+//| 函数名称 | UpdateVoltageCheckListWrite
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | 根据接收上位机的协议号来寻址设定电压
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | ush_Index -- 内存映射表索引值 ， f_Write -- 设定电压值，ul_Tick -- 最新设定时间点
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | -1 -- 操作异常， 0 -- 操作成功
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | 李壮 2016.8.2
+//==================================================================================================
+void UpdateVoltageCheckListWrite(INT16U ush_Index, FP32 f_Write,	INT32U ul_Tick)
+{
+        STRCheckVoltageList *pstrCheckVol = GetCheckVoltageListPtr();
+
+        if ( ush_Index >= ( MAX_VOL_CHANNEL- 1) )
+        {
+                return;
+        }
+
+        pstrCheckVol[ush_Index].f_WriteValue = f_Write;
+
+        pstrCheckVol[ush_Index].ul_WriteTime = ul_Tick;
+}
+//==================================================================================================
+//| 函数名称 | SetParameterByVoltageList
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | 根据接收上位机的协议号来寻址设定电压
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | puch_iData -- 接收上位机数据指针
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | -1 -- 操作异常， 0 -- 操作成功
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | 李壮 2016.8.2
+//==================================================================================================
+
+INT32U CheckSettedVoltageIsOK(void)
+{
+        INT32U ul_RealDeltaTime = 0;
+
+        FP32 f_RealDeltaValue = 0,f_SetDeltaValue = 0;
+
+        INT32U ul_Ret = 0;
+
+        static INT32U ul_ErrBack = 0;
+        static INT32U ul_TickCount =GetTickCount();
+
+        STRSetVoltageList *pstrSetVol = GetSetVoltageListPtr();
+
+        STRCheckVoltageList *pstrCheckVol =  GetCheckVoltageListPtr();
+
+        for(INT16U i =0 ; i < MAX_VOL_CHANNEL - 1; i++)
+        {
+                //是否需要对设定值进行判断
+
+                if ( 0xffff == pstrCheckVol[i].ush_MemMapOffset )
+                {
+                        continue;
+                }
+                //判断是否设置过
+                if ( pstrCheckVol[i].ul_WriteTime == 0 )
+                {
+                        continue;
+                }
+
+                if(!cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_PumpIO) //待机状态 不断更新write time, 将不会进行 电压比较判断
+                {
+                        pstrCheckVol[i].ul_WriteTime = GetTickCount();
+                        continue;
+                }
+
+
+                //判断设置过后是否读取更新过
+                if( pstrCheckVol[i].ul_ReadTime <= pstrCheckVol[i].ul_WriteTime)
+                {
+                        continue;
+                }
+
+                ul_RealDeltaTime = pstrCheckVol[i].ul_ReadTime - pstrCheckVol[i].ul_WriteTime;
+
+                //判断是否达到等待时间
+                if( ul_RealDeltaTime < pstrCheckVol[i].ul_SetWaitTime)
+                {
+                        continue;
+                }
+
+
+                //计算差值
+                if(   ( ( pstrCheckVol[i].ush_VoltageListIndex >=6 ) &&  ( pstrCheckVol[i].ush_VoltageListIndex <=11 ) )//4路高压上位机设定的都是正值,离子能量要绝对值计算
+
+                        || ( pstrCheckVol[i].ush_VoltageListIndex ==13 ) //检测器偏转电压
+
+
+                )
+
+                {
+                        f_RealDeltaValue = FP32 ( fabs(pstrCheckVol[i].f_WriteValue - pstrCheckVol[i].f_ReadValue) );
+                }
+                else
+                {
+                        f_RealDeltaValue = pstrCheckVol[i].f_WriteValue - pstrCheckVol[i].f_ReadValue;
+                }
+
+                f_SetDeltaValue = pstrCheckVol[i].f_SetDeltaValue;
+
+
+
+                if ( fabs(f_RealDeltaValue) > f_SetDeltaValue)
+                {
+                        ul_Ret |= 1<< i;
+                }
+
+
+
+        }//end for
+
+
+        //校验异常信息输出
+        if( ul_Ret != ul_ErrBack )					//新故障触发模式
+        //if( GetTickCount() - ul_TickCount > 10000)//定时器触发模式
+        {
+                ul_TickCount = GetTickCount();
+                /////printf("//#########################start printf Err info-------------------->\r\n");
+                for (INT8U i = 0; i< MAX_VOL_CHANNEL - 1; i++)
+                {
+
+                        if( (ul_Ret & ( 1<< i ) ) )
+                        {
+                                //如果使能打印
+                                if (cl_Xml.m_XmlCoonfig.bPrintfMainVolErr == 1)
+                                {
+                                        printf("ErrNo. %d\t,%s\t,write %.1f\t, read %.1f\t, delta %.1f\t   \r\n",
+                                                i,
+                                                pstrSetVol[i].asch_Note,
+                                                pstrCheckVol[i].f_WriteValue,
+                                                pstrCheckVol[i].f_ReadValue,
+                                                pstrCheckVol[i].f_SetDeltaValue
+                                                );
+                                }
+                        }
+                }//end for
+
+                ////////printf("//**************************stop printf Err info--------------------<\r\n");
+        }//end if
+
+
+        //printf("//*********************************start printf write info\r\n");
+        //如果调谐界面有设定，打印
+        for (INT8U i = 0; i< MAX_VOL_CHANNEL - 1; i++)
+        {
+                if ( pstrSetVol[i].uch_CmdSetFlag == 1)
+                {
+                        pstrSetVol[i].uch_CmdSetFlag = 0;
+
+                        /*printf("MapNo. %d\t,%s\t,write %.1f\t, read %.1f\t, delta %.1f\t   \r\n",
+                                i,
+                                pstrSetVol[i].asch_Note,
+                                pstrCheckVol[i].f_WriteValue,
+                                pstrCheckVol[i].f_ReadValue,
+                                pstrCheckVol[i].f_SetDeltaValue
+                                );*/
+
+                }
+        }
+
+        ul_ErrBack = ul_Ret;
+
+        return ul_Ret;
+
+}
+
+//==================================================================================================
+//| 函数名称 |
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 |
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 |
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 |
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | lyb 2017.09.05
+//==================================================================================================
+INT32U CheckVoltage(void)
+{
+        INT32U ul_RealDeltaTime = 0;
+
+        FP32 f_RealDeltaValue = 0,f_SetDeltaValue = 0;
+
+        INT32U ul_Ret = 0;
+
+        static INT32U ul_ErrBack = 0;
+        static INT32U ul_TickCount =GetTickCount();
+
+        STRSetVoltageList *pstrSetVol = GetSetVoltageListPtr();
+
+        STRCheckVoltageList *pstrCheckVol =  GetCheckVoltageListPtr();
+
+
+
+        for(int i=0;i<MAX_VOL_CHANNEL- 1;i++)
+        {
+                if ( 0xffff == pstrCheckVol[i].ush_MemMapOffset )
+                {
+                        continue;
+                }
+
+                //判断是否设置过
+                if ( pstrCheckVol[i].ul_WriteTime == 0 )
+                {
+                        continue;
+                }
+                if(!cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_PumpIO) //待机状态 不断更新write time, 将不会进行 电压比较判断
+                {
+                        pstrCheckVol[i].ul_WriteTime = GetTickCount();
+                        continue;
+                }
+
+                //如果是毛细管高压 需要毛细管高压开启
+                if( pstrCheckVol[i].ush_VoltageListIndex == 7 && cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_CoroIO == 0)
+                {
+                        continue;
+                }
+
+
+                //如果是倍增器高压，
+                if( ( pstrCheckVol[i].ush_VoltageListIndex == 6
+                        || pstrCheckVol[i].ush_VoltageListIndex == 9
+                        || pstrCheckVol[i].ush_VoltageListIndex == 13)
+                        && cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_EMIO == 0)
+                {
+
+                        continue;
+                }
+
+
+
+                //判断设置过后是否读取更新过
+                if( pstrCheckVol[i].ul_ReadTime <= pstrCheckVol[i].ul_WriteTime)
+                {
+                        continue;
+                }
+
+                ul_RealDeltaTime = pstrCheckVol[i].ul_ReadTime - pstrCheckVol[i].ul_WriteTime;
+
+                //判断是否达到等待时间
+                if( ul_RealDeltaTime < pstrCheckVol[i].ul_SetWaitTime)
+                {
+                        continue;
+                }
+
+
+
+                //计算差值  有设置值和反馈值符号不同 直接 比较绝对值的差
+                if(   ( ( pstrCheckVol[i].ush_VoltageListIndex >=6 ) &&  ( pstrCheckVol[i].ush_VoltageListIndex <=11 ) )//4路高压上位机设定的都是正值,离子能量要绝对值计算
+
+                        || ( pstrCheckVol[i].ush_VoltageListIndex ==13 ) //检测器偏转电压
+
+                        )
+                {
+                        f_RealDeltaValue = FP32 ( fabs(pstrCheckVol[i].f_WriteValue) - fabs(pstrCheckVol[i].f_ReadValue) );
+                }
+                else
+                {
+                        f_RealDeltaValue = FP32 ( pstrCheckVol[i].f_WriteValue - pstrCheckVol[i].f_ReadValue );
+                }
+
+                f_SetDeltaValue = pstrCheckVol[i].f_SetDeltaValue;
+
+
+
+                if ( fabs(f_RealDeltaValue) > f_SetDeltaValue)
+                {
+                        ul_Ret |= 1<< i;
+                }
+
+        }
+
+
+
+        /*
+        INT8U i=0;
+        for(INT8U j=0; j<4;j++) //选择几个特定的电压比较
+        {
+                if(j==0)
+                {
+                        if(!cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_EMIO)
+                        {
+                                pstrCheckVol[6].ul_WriteTime = GetTickCount();
+                                continue;
+                        }
+                        else
+                        {
+                                i = 6;
+                        }
+                }
+                else if(j==1)
+                {
+                        if(!cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_CoroIO)
+                        {
+                                pstrCheckVol[7].ul_WriteTime = GetTickCount();
+                                continue;
+                        }
+                        else
+                        {
+                                i = 7;
+                        }
+                }
+                else if(j==2)
+                {
+                        if(!cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_EMIO)
+                        {
+                                pstrCheckVol[9].ul_WriteTime = GetTickCount();
+                                continue;
+                        }
+                        else
+                        {
+                                i = 9;
+                        }
+                }
+                else if(j==3)
+                {
+                        if(!cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_EMIO)
+                        {
+                                pstrCheckVol[13].ul_WriteTime = GetTickCount();
+                                continue;
+                        }
+                        else
+                        {
+                                i = 13;
+                        }
+
+                }
+                else
+                {
+                        return 1;
+                }
+
+                //是否需要对设定值进行判断
+
+                if ( 0xffff == pstrCheckVol[i].ush_MemMapOffset )
+                {
+                        continue;
+                }
+                //判断是否设置过
+                if ( pstrCheckVol[i].ul_WriteTime == 0 )
+                {
+
+                        continue;
+                }
+
+                if(!cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_PumpIO) //待机状态 不断更新write time, 将不会进行 电压比较判断
+                {
+                        pstrCheckVol[i].ul_WriteTime = GetTickCount();
+                        continue;
+                }
+
+
+
+
+                //判断设置过后是否读取更新过
+                if( pstrCheckVol[i].ul_ReadTime <= pstrCheckVol[i].ul_WriteTime)
+                {
+                        continue;
+                }
+
+                ul_RealDeltaTime = pstrCheckVol[i].ul_ReadTime - pstrCheckVol[i].ul_WriteTime;
+
+                //判断是否达到等待时间
+                if( ul_RealDeltaTime < pstrCheckVol[i].ul_SetWaitTime)
+                {
+                        continue;
+                }
+
+
+                //计算差值  有设置值和反馈值符号不同 直接 比较绝对值的差
+                if(   ( ( pstrCheckVol[i].ush_VoltageListIndex >=6 ) &&  ( pstrCheckVol[i].ush_VoltageListIndex <=11 ) )//4路高压上位机设定的都是正值,离子能量要绝对值计算
+
+                        || ( pstrCheckVol[i].ush_VoltageListIndex ==13 ) //检测器偏转电压
+
+                )
+                {
+                        f_RealDeltaValue = FP32 ( fabs(pstrCheckVol[i].f_WriteValue) - fabs(pstrCheckVol[i].f_ReadValue) );
+                }
+                else
+                {
+                        f_RealDeltaValue = FP32 ( pstrCheckVol[i].f_WriteValue - pstrCheckVol[i].f_ReadValue );
+                }
+
+                f_SetDeltaValue = pstrCheckVol[i].f_SetDeltaValue;
+
+
+
+                if ( fabs(f_RealDeltaValue) > f_SetDeltaValue)
+                {
+                        ul_Ret |= 1<< i;
+                }
+
+        }//end for
+        */
+
+
+
+
+
+
+
+
+
+
+
+
+        //校验异常信息输出
+        if( ul_Ret != ul_ErrBack )					//新故障触发模式
+        //if( GetTickCount() - ul_TickCount > 10000)//定时器触发模式
+        {
+                ul_TickCount = GetTickCount();
+                /////printf("//#########################start printf Err info-------------------->\r\n");
+                for (INT8U i = 0; i< MAX_VOL_CHANNEL - 1; i++)
+                {
+
+                        if( (ul_Ret & ( 1<< i ) ) )
+                        {
+                                //如果使能打印
+                                if (cl_Xml.m_XmlCoonfig.bPrintfMainVolErr == 1)
+                                {
+                                        printf("ErrNo. %d\t,%s\t,write %.1f\t, read %.1f\t, delta %.1f\t   \r\n",
+                                                i,
+                                                pstrSetVol[i].asch_Note,
+                                                pstrCheckVol[i].f_WriteValue,
+                                                pstrCheckVol[i].f_ReadValue,
+                                                pstrCheckVol[i].f_SetDeltaValue
+                                                );
+                                }
+                        }
+                }//end for
+
+                ////////printf("//**************************stop printf Err info--------------------<\r\n");
+        }//end if
+
+
+        //printf("//*********************************start printf write info\r\n");
+        //如果调谐界面有设定，打印
+        for (INT8U i = 0; i< MAX_VOL_CHANNEL - 1; i++)
+        {
+                if ( pstrSetVol[i].uch_CmdSetFlag == 1)
+                {
+                        pstrSetVol[i].uch_CmdSetFlag = 0;
+
+                        /*printf("MapNo. %d\t,%s\t,write %.1f\t, read %.1f\t, delta %.1f\t   \r\n",
+                                i,
+                                pstrSetVol[i].asch_Note,
+                                pstrCheckVol[i].f_WriteValue,
+                                pstrCheckVol[i].f_ReadValue,
+                                pstrCheckVol[i].f_SetDeltaValue
+                                );*/
+
+                }
+        }
+
+        ul_ErrBack = ul_Ret;
+
+        return ul_Ret;
+
+
+}
+
+//==================================================================================================
+//| 函数名称 | SetParameterByVoltageList
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | 根据接收上位机的协议号来寻址设定电压
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | puch_iData -- 接收上位机数据指针
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | -1 -- 操作异常， 0 -- 操作成功
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | 李壮 2016.8.2
+//==================================================================================================
+INT8U SetParameterByVoltageList(INT8U *puch_iData)
+{
+        FP32 f_Data = DecodeFloat(&puch_iData[1]);
+
+        INT8U uch_Re = 0;
+
+        INT8U uch_Index = 0;
+        INT8U uch_ProctolFlag = puch_iData[0];
+
+        INT16U uin_Data = 0, uin_Temp = 0, uin_Addr = 0;
+        INT16U uch_SynValue = 0, uin_SynAddr = 12;
+
+        FP32 f_FirstData = 0;
+        FP32 f_SecondData = 0;
+
+        //根据协议标志位搜索
+        STRSetVoltageList *pstrVoltageList = FindSetVolListPtr(uch_ProctolFlag);
+
+        INT16U ush_Index = FindSetVolListIndex(uch_ProctolFlag);
+
+        if (pstrVoltageList == NULL )
+        {
+                uch_Re = 1;
+        }
+        else
+        {
+                //更新设置值
+                UpdateVoltageCheckListWrite(ush_Index,	f_Data,	GetTickCount() );
+
+                //写设置标志位
+                pstrVoltageList->uch_CmdSetFlag = 1;
+
+                //获得硬件地址
+                uin_Addr = pstrVoltageList->ush_Addr;
+                //一级公式运算
+                f_FirstData = f_Data * pstrVoltageList->f_k;
+                //二级公式运算
+                f_SecondData = (f_FirstData * pstrVoltageList->f_a  + pstrVoltageList->f_b) * pstrVoltageList->f_c;
+
+                uin_Data = (INT16)f_SecondData;
+
+                //printf("PC %.1f,1st %.3f, 2nd %.1f, fp %04x, mk %02x, pt %02x, %s\r\n",
+                //	f_Data,f_FirstData,f_SecondData,uin_Data,pstrVoltageList->uch_Mask,pstrVoltageList->uch_ProctolFlag, pstrVoltageList->asch_Note);
+
+                uin_Data = uin_Data | ( pstrVoltageList->uch_Mask <<8 );
+                //获取写同步标志值
+                uch_SynValue = pstrVoltageList->uch_SyncValue;
+
+                //写高字节
+                uin_Temp = (uin_Data & 0xff00) >> 8;
+                MemoryWrite(FPGA_REG, uin_Addr, &uin_Temp);
+                //写低字节
+                uin_Temp = uin_Data & 0x00ff;
+                MemoryWrite(FPGA_REG, uin_Addr + 1, &uin_Temp);
+
+                OperateRunFlag(uch_SynValue, uin_SynAddr);
+        }
+
+
+        return uch_Re;
+
+}
+
+//-----------------------------------------------------------------------------------------------------------------------------------------------------<<<<<<<<<<<<<<<<
+//wxb20130820
+void WriteDA(INT16U uin_Addr, FP32 f_Data, INT8U uch_SynValue,INT8U uch_iChannel /* = 0 */, INT16U uin_SynAddr /* = 12 */)
+{
+        INT16U uin_Data = 0, uin_Temp = 0;
+
+        switch(uin_Addr)
+        {
+        case DA_LTC1595_1_addr:
+        case DA_LTC1595_2_addr:
+                {
+                        uin_Data = (INT16U)(f_Data * 65535 / MSRF_REFERENCE);
+                }
+                break;
+
+        case DA_AD5546_1_addr:
+        case DA_AD5546_2_addr:
+                {
+                        uin_Data = (INT16U)(f_Data * 32767 / 4.1f);
+                }
+                break;
+
+        case DA_DAC121_1_addr:
+                {
+                        uin_Data = (INT16U)(f_Data * 4095 / 4.1f);
+                }
+                break;
+
+        case DA_DAC121_2_addr:
+                {
+                        uin_Data = (INT16U)(f_Data * 4095 / 2.5f);
+                }
+                break;
+
+        case DA_DAC124_11_addr:
+                {
+                        uin_Data = (INT16U)(f_Data * 4095 / 4.1f);
+
+                        if(1 == uch_iChannel)
+                        {
+                                uin_Data = (0x1000 | uin_Data);
+                        }
+                        else if(2 == uch_iChannel)
+                        {
+                                uin_Data = (0x5000 | uin_Data);
+                        }
+                        else if(3 == uch_iChannel)
+                        {
+                                uin_Data = (0x9000 | uin_Data);
+                        }
+                        else if(4 == uch_iChannel)
+                        {
+                                uin_Data = (0xd000 | uin_Data);
+                        }
+                }
+                break;
+
+        case DA_DAC124_21_addr:
+                {
+                        uin_Data = (INT16U)(f_Data * 4095 / 2.5f);
+                        if(1 == uch_iChannel)
+                        {
+                                uin_Data = (0x1000 | uin_Data);
+                        }
+                        else if(2 == uch_iChannel)
+                        {
+                                uin_Data = (0x5000 | uin_Data);
+                        }
+                        else if(3 == uch_iChannel)
+                        {
+                                uin_Data = (0x9000 | uin_Data);
+                        }
+                        else if(4 == uch_iChannel)
+                        {
+                                uin_Data = (0xd000 | uin_Data);
+                        }
+                }
+                break;
+
+        case DA_DAC124_31_addr:
+                {
+                        //正负值直接由硬件离子开关控制
+                        uin_Data = (INT16U)(f_Data * 4095 / 4.1f);
+                        //uin_Data =  (INT16U)(2048 - f_Data * 2047 / 4.1f);
+                        if(1 == uch_iChannel)
+                        {
+                                uin_Data = (0x1000 | uin_Data);
+                        }
+                        else if(2 == uch_iChannel)
+                        {
+                                uin_Data = (0x5000 | uin_Data);
+                        }
+                        else if(3 == uch_iChannel)
+                        {
+                                uin_Data = (0x9000 | uin_Data);
+                        }
+                        else if(4 == uch_iChannel)
+                        {
+                                uin_Data = (0xd000 | uin_Data);
+                        }
+                }
+                break;
+
+        case DA_LTC8043_1_addr:
+        case DA_LTC8043_2_addr:
+                {
+                        //lz2015.12.31 ms ionic energy
+                        if (cl_Xml.m_XmlCoonfig.bIonicEnergyConnected == 1)
+                        {
+                                //设绝对值
+                                uin_Data = (INT16U)(f_Data * 2047 / MSRF_REFERENCE);
+                        }
+                        else
+                        {
+                                //正负可设
+                                uin_Data =  (INT16U)(2048 - f_Data * 2047/MSRF_REFERENCE);
+                        }
+                }
+                break;
+
+        case DA_LTC8043_3_addr:
+                {
+                        uin_Data = (INT16U)(f_Data * 2047 / 4.1f);
+                        //uin_Data =  (INT16U)(2048 - f_Data * 2047 / 4.1f);
+                }
+                break;
+
+        case DA_LTC8043_4_addr:
+                {
+                        uin_Data =  (INT16U)(2048 - f_Data * 2047 / 4.1f);
+                }
+                break;
+
+        case DA_LTC8043_5_addr:
+        case DA_LTC8043_6_addr:
+        case DA_LTC8043_11_addr:
+        case DA_LTC8043_12_addr:
+                {
+                        uin_Data =  (INT16U)(2048 - f_Data * 2047 / 4.1f);
+                }
+                break;
+
+        case DA_LTC8043_7_addr:
+        case DA_LTC8043_8_addr:
+        case DA_LTC8043_9_addr:
+        case DA_LTC8043_10_addr:
+                {
+                        uin_Data = (INT16U)(f_Data * 4095 / 300);
+                }
+                break;
+
+        case ION_SWITCH_MS_addr:
+                {
+                        uin_Data = (INT16U)(f_Data);
+                }
+                break;
+
+        case ION_CONNECTED_addr:
+                {
+                        uin_Data = (INT16U)(f_Data);
+                }
+                break;
+
+        default:
+                {
+                        ;
+                }
+                break;
+        }
+
+        uin_Temp = (uin_Data & 0xff00) >> 8;
+        MemoryWrite(FPGA_REG, uin_Addr, &uin_Temp);
+        uin_Temp = uin_Data & 0x00ff;
+        MemoryWrite(FPGA_REG, uin_Addr + 1, &uin_Temp);
+        //if(DA_DAC124_21_addr == uin_Addr)
+        //	RETAILMSG(1,(_T("写地址为【%d】 数值为【%d】 同步信号量为【%d】 \r\n "),uin_Addr,uin_Data,uch_SynValue));
+        OperateRunFlag(uch_SynValue, uin_SynAddr);
+}
+//wxb20130820
+FP32 ReadAD(INT16U uin_Addr, FP32* f_Data, INT8U uch_SynValue, INT16U uin_SynAddr /* = 12 */)
+{
+        INT16U uin_Data = 0,uin_Temp = 0;
+        FP32 f_Temp = 0;
+
+        //OperateRunFlag(uch_SynValue, uin_SynAddr);
+        MemoryRead(FPGA_REG, uin_Addr, &uin_Data);
+
+        //数据转换
+        if ((AD_AD7689_CS1_6_addr == uin_Addr)
+                || (AD_AD7689_CS1_7_addr == uin_Addr)
+                || (AD_AD7689_CS1_8_addr == uin_Addr))
+        {
+                if (uin_Data < 32768)
+                {
+                        uin_Data = uin_Data << 1;
+                        f_Temp = uin_Data * 2.5f / 65535;
+                }
+                else
+                {
+                        uin_Data = uin_Data << 1;
+                        f_Temp = uin_Data * 2.5f / 65535;
+                        f_Temp = f_Temp * -1.0f;
+                }
+        }
+        else
+        {
+                f_Temp = uin_Data * 2.5f / 65535;
+        }
+
+        if(f_Data != NULL)
+        {
+                *f_Data = f_Temp;
+        }
+
+        return f_Temp;
+}
+
+//==================================================================================================
+//| 函数名称 | SetParamtoSetVKB
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | 根据接收上位机的协议号来改变参数
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | puch_iData -- 接收上位机数据指针
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | -1 -- 操作异常， 0 -- 操作成功
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | 陈飞华  2017.3.17
+//==================================================================================================
+INT8U SetParamtoSetVKB(INT8U *puch_iData)
+{
+        //const char *pschFullPath = "/FlashDisk2/lcms/mars7500.xml";
+        //char asch_Testbuf[20] = {0};
+
+
+        FP32 f_Datamax;
+        FP32 f_Datamin ;
+        FP32 f_Datadefault;
+        FP32 f_Datasetk;
+        FP32 f_Datasetb;
+        FP32 f_Datarefk ;
+        FP32 f_Datarefb;
+
+
+        //离子类型
+        INT8U uch_Ionflag = puch_iData[0];
+        //电压个数
+        INT8U uch_Volnum = puch_iData[1];
+
+        INT8U i;
+        INT8U uch_vtype = 0;
+        if(uch_Ionflag == 0)
+        {
+
+                for(i=0;i<uch_Volnum;i++)
+                {
+
+                        uch_vtype = puch_iData[2+29*i];
+                        f_Datamax = DecodeFloat(&puch_iData[3+29*i]);
+                        f_Datamin =DecodeFloat(&puch_iData[7+29*i]);
+                        f_Datadefault =DecodeFloat(&puch_iData[11+29*i]);
+                        f_Datasetk =DecodeFloat(&puch_iData[15+29*i]);
+                        f_Datasetb =DecodeFloat(&puch_iData[19+29*i]);
+                        f_Datarefk =DecodeFloat(&puch_iData[23+29*i]);
+                        f_Datarefb =DecodeFloat(&puch_iData[27+29*i]);
+
+                        //负离子
+
+                        cl_Xml.f_Vmax[uch_vtype] = f_Datamax;
+                        cl_Xml.f_Vmin[uch_vtype] = f_Datamin;
+                        cl_Xml.f_Vdefault[uch_vtype] = f_Datadefault;
+                        cl_Xml.f_Setkneg[uch_vtype] = f_Datasetk;  //设置值得校准k
+                        cl_Xml.f_Setbneg[uch_vtype] = f_Datasetb;  //设置值校准 b
+                        cl_Xml.f_Reflectkneg[uch_vtype] =f_Datarefk ; //反馈值得K
+                        cl_Xml.f_Reflectbneg[uch_vtype] = f_Datarefb; //反馈值得b
+                        /*sprintf(asch_Testbuf, "%04f", cl_Xml.f_Vmax[uch_vtype]);
+                        ModifyNodeTextDirect(pschFullPath, g_strxmlparalist[uch_vtype].ash_max,asch_Testbuf);
+                        sprintf(asch_Testbuf, "%04f", cl_Xml.f_Vmin[i]);
+                        ModifyNodeTextDirect(pschFullPath, g_strxmlparalist[uch_vtype].ash_min,asch_Testbuf);
+                        sprintf(asch_Testbuf, "%04f", cl_Xml.f_Vdefault[uch_vtype]);
+                        ModifyNodeTextDirect(pschFullPath, g_strxmlparalist[uch_vtype].ash_default,asch_Testbuf);
+                        sprintf(asch_Testbuf, "%04f", cl_Xml.f_Setkneg[uch_vtype]);
+                        ModifyNodeTextDirect(pschFullPath, g_strxmlparalist[uch_vtype].ash_setvk,asch_Testbuf);
+
+                        sprintf(asch_Testbuf, "%04f", cl_Xml.f_Setbneg[uch_vtype]);
+                        ModifyNodeTextDirect(pschFullPath, g_strxmlparalist[uch_vtype].ash_setvb,asch_Testbuf);
+                        sprintf(asch_Testbuf, "%04f", cl_Xml.f_Reflectkneg[uch_vtype]);
+                        ModifyNodeTextDirect(pschFullPath, g_strxmlparalist[uch_vtype].ash_refvk,asch_Testbuf);
+                        sprintf(asch_Testbuf, "%04f", cl_Xml.f_Reflectbneg[uch_vtype]);
+                        ModifyNodeTextDirect(pschFullPath, g_strxmlparalist[uch_vtype].ash_refvb,asch_Testbuf);*/
+
+
+                }
+
+
+        }
+        else//正离子
+        {
+                for(i=0;i<uch_Volnum;i++)
+                {
+
+                        uch_vtype = puch_iData[2+29*i];
+                        f_Datamax = DecodeFloat(&puch_iData[3+29*i]);
+                        f_Datamin =DecodeFloat(&puch_iData[7+29*i]);
+                        f_Datadefault =DecodeFloat(&puch_iData[11+29*i]);
+                        f_Datasetk =DecodeFloat(&puch_iData[15+29*i]);
+                        f_Datasetb =DecodeFloat(&puch_iData[19+29*i]);
+                        f_Datarefk =DecodeFloat(&puch_iData[23+29*i]);
+                        f_Datarefb =DecodeFloat(&puch_iData[27+29*i]);
+
+                        //离子
+
+                        cl_Xml.f_Vmax[uch_vtype+31] = f_Datamax;
+                        cl_Xml.f_Vmin[uch_vtype+31] = f_Datamin;
+                        cl_Xml.f_Vdefault[uch_vtype+31] = f_Datadefault;
+                        cl_Xml.f_Setkneg[uch_vtype+31] = f_Datasetk;  //设置值得校准k
+                        cl_Xml.f_Setbneg[uch_vtype+31] = f_Datasetb;  //设置值校准 b
+                        cl_Xml.f_Reflectkneg[uch_vtype+31] =f_Datarefk ; //反馈值得K
+                        cl_Xml.f_Reflectbneg[uch_vtype+31] = f_Datarefb; //反馈值得b
+                        //sprintf(asch_Testbuf, "%04f", cl_Xml.f_Vmax[uch_vtype]);
+                        /*ModifyNodeTextDirect(pschFullPath, g_strxmlparalist[uch_vtype].ash_max,&puch_iData[3+29*i]);
+                        //sprintf(asch_Testbuf, "%04f", cl_Xml.f_Vmin[i]);
+                        ModifyNodeTextDirect(pschFullPath, g_strxmlparalist[uch_vtype].ash_min,&puch_iData[7+29*i]);
+                        //sprintf(asch_Testbuf, "%04f", cl_Xml.f_Vdefault[uch_vtype]);
+                        ModifyNodeTextDirect(pschFullPath, g_strxmlparalist[uch_vtype].ash_default,&puch_iData[11+29*i]);
+                        //sprintf(asch_Testbuf, "%04f", cl_Xml.f_Setkneg[uch_vtype]);
+                        ModifyNodeTextDirect(pschFullPath, g_strxmlparalist[uch_vtype].ash_setvpk,&puch_iData[15+29*i]);
+
+                        //sprintf(asch_Testbuf, "%04f", cl_Xml.f_Setbneg[uch_vtype]);
+                        ModifyNodeTextDirect(pschFullPath, g_strxmlparalist[uch_vtype].ash_setvpb,&puch_iData[19+29*i]);
+                        //sprintf(asch_Testbuf, "%04f", cl_Xml.f_Reflectkneg[uch_vtype]);
+                        ModifyNodeTextDirect(pschFullPath, g_strxmlparalist[uch_vtype].ash_refvpk,&puch_iData[23+29*i]);
+                        //sprintf(asch_Testbuf, "%04f", cl_Xml.f_Reflectbneg[uch_vtype]);
+                        ModifyNodeTextDirect(pschFullPath, g_strxmlparalist[uch_vtype].ash_refvpb,&puch_iData[3+29*i]);*/
+
+
+                }
+
+        }
+
+
+        return 1;
+
+}
+
+
+
+//==================================================================================================
+//| 函数名称 | ResetAllVol
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | 将所有电压都设置为0
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | 无
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | void
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | lyb 2019.07.15
+//==================================================================================================
+void ResetAllVol(void)
+{
+        FP32 f_Data = 0.0;
+        INT8U auch_Data[5];
+
+        EncodeFloat(f_Data,auch_Data+1);
+
+        //对应的电压对协议中的寄存器地址
+        auch_Data[0] = 0x02;
+        SetParameterByVoltageList(auch_Data);
+        auch_Data[0] = 0x0a;
+        SetParameterByVoltageList(auch_Data);
+        auch_Data[0] = 0x09;
+        SetParameterByVoltageList(auch_Data);
+        auch_Data[0] = 0x0b;
+        SetParameterByVoltageList(auch_Data);
+        auch_Data[0] = 0x04;
+        SetParameterByVoltageList(auch_Data);
+        auch_Data[0] = 0x03;
+        SetParameterByVoltageList(auch_Data);
+
+        auch_Data[0] = 0x13;
+        SetParameterByVoltageList(auch_Data);
+        auch_Data[0] = 0x00;
+        SetParameterByVoltageList(auch_Data);
+        auch_Data[0] = 0x01;
+        SetParameterByVoltageList(auch_Data);
+        auch_Data[0] = 0x11;
+        SetParameterByVoltageList(auch_Data);
+
+        auch_Data[0] = 0x06;
+        SetParameterByVoltageList(auch_Data);
+        auch_Data[0] = 0x0e;
+        SetParameterByVoltageList(auch_Data);
+        auch_Data[0] = 0X0D;
+        SetParameterByVoltageList(auch_Data);
+        auch_Data[0] = 0x12;
+        SetParameterByVoltageList(auch_Data);
+
+        auch_Data[0] = 0x14;
+        SetParameterByVoltageList(auch_Data);
+        auch_Data[0] = 0x05;
+        SetParameterByVoltageList(auch_Data);
+
+        auch_Data[0] = 0X08;
+        SetParameterByVoltageList(auch_Data);
+        auch_Data[0] = 0x07;
+        SetParameterByVoltageList(auch_Data);
+        auch_Data[0] = 0x10;
+        SetParameterByVoltageList(auch_Data);
+        auch_Data[0] = 0x0f;
+        SetParameterByVoltageList(auch_Data);
+
+        auch_Data[0] = 0x18;
+        SetParameterByVoltageList(auch_Data);
+        auch_Data[0] = 0x19;
+        SetParameterByVoltageList(auch_Data);
+        auch_Data[0] = 0x1a;
+        SetParameterByVoltageList(auch_Data);
+        auch_Data[0] = 0x1b;
+        SetParameterByVoltageList(auch_Data);
+
+        //auch_Data[0] = 0x16;
+        //SetParameterByVoltageList(auch_Data);
+
+
+        return;
+}
+
+
+
+//no more

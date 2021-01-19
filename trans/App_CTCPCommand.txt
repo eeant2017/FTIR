@@ -1,0 +1,871 @@
+
+#include "App_CTCPCommand.h"
+#include "Mod_Method.h"
+#include "Pro_Api.h"
+#include "Pub_Fun.h"
+#include "Pub_Alarm.h"
+#include "App_App.h"
+
+#include  "epcIoLib.h"
+
+#include "Mod_Mnt.h"
+#include "Mod_Xml.h"
+#include "Pro_FPGA.h"
+#include "debug.h"
+#include "lc-ms.h"
+#include "Mod_WriteDebugLog.h"
+#include "Mod_Env.h"
+
+
+extern CApp cl_gApp;
+extern CRITICAL_SECTION CriticalSection_AppRun;//锁
+//==================================================================================================
+//| 函数名称 | Receive
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | 接收函数
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | p_frm -- 缓冲区指针, p_datLen -- 数据帧长度指针
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | -1 -- 操作异常， 0 -- 操作成功
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | lxlll,2012.05.25
+//==================================================================================================
+CTCPCommand::~CTCPCommand()
+{
+
+};
+//==================================================================================================
+//| 函数名称 | Receive
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | 接收函数
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | p_frm -- 缓冲区指针, p_datLen -- 数据帧长度指针
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | -1 -- 操作异常， 0 -- 操作成功
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | lxlll,2012.05.25
+//==================================================================================================
+static INT8U uch_mainBoardSoftID[] =   ARM_VERSION;
+INT8S CTCPCommand::DealCommand(INT8U *puch_iData,INT16U uin_iLen)
+{
+        //INT8U *puch_Data = (INT8U *)puch_iData;
+        if(puch_iData == NULL)
+                return -127;
+        INT8S sch_Re = 0;
+        INT8U *puch_Data = NULL;
+        INT16U uin_Temp = 0;
+        INT8U i = 0,uch_Data = 0;
+        INT16U uin_Data = 0;
+        QEvent m;
+        STRMethodPara* pst_MethodPara = NULL;
+
+
+        switch(GetCommand())
+        {
+                case 0x21: //软件版本号
+#pragma region
+                {
+                        if(FPI_CMD_RED == GetExCommand())
+                        {
+                                if(puch_iData[0] == 0x00)
+                                {//MS主板
+                                        SetExCommand(FPI_CMD_RED_RPY);
+                                        puch_Data = (INT8U*)AllocBKData(32);
+                                        memcpy(puch_Data, uch_mainBoardSoftID, 32);
+                                }
+                                else if(puch_iData[0] == 0x01)
+                                {//FPGA
+                                        SetExCommand(FPI_CMD_RED_RPY);
+                                        puch_Data = (INT8U*)AllocBKData(32);
+                                        INT8U uch_FPGAVersion[32];
+                                        ReadFPGAVersion(uch_FPGAVersion);
+                                        memcpy(puch_Data, uch_FPGAVersion, 32);
+                                }
+                                else
+                                {
+                                        sch_Re = -10;
+                                }
+                        }
+                        else
+                        {
+                                sch_Re = -10;
+                        }
+                }
+                break;
+#pragma endregion
+        case 0x35:
+#pragma region
+                if(FPI_CMD_RED == GetExCommand())
+                {
+                        SetExCommand(FPI_CMD_WRT_RPY);
+                        puch_Data = (INT8U*)AllocBKData(2000);
+                }
+                else
+                {
+                        sch_Re = -10;
+                }
+
+                break;
+#pragma endregion
+        case 0x23:
+#pragma region 开关量控制
+                if(FPI_CMD_RED == GetExCommand())
+                {
+                        sch_Re = -10;
+                }
+                else
+                {
+                        if(uin_iLen != 2)
+                                sch_Re = -10;
+                        else
+                        {
+                                SetExCommand(FPI_CMD_WRT_RPY);
+                                puch_Data = (INT8U*)AllocBKData(1);
+                                if(0 == SetSwitch(puch_iData))
+                                {
+                                        *puch_Data = FPI_CMD_WRT_SUCC;
+                                }
+                                else
+                                {
+                                        *puch_Data = FPI_CMD_WRT_FAIL;
+                                }
+                        }
+                }
+                break;
+#pragma endregion
+        case 0x24://voltage set...
+#pragma region 电压设置-------------------------------------------------------------------------------------------->
+                if(FPI_CMD_RED == GetExCommand())
+                {
+
+                        sch_Re = -10;
+                }
+                else
+                {
+                        if(uin_iLen != 5)
+                                sch_Re = -10;
+                        else
+                        {
+                                SetExCommand(FPI_CMD_WRT_RPY);
+                                puch_Data = (INT8U*)AllocBKData(1);
+
+                                //old mcu version style
+                                ///if(0 == SetParameter(puch_iData))
+                                //new pcb version soft style	lz2016.4.13
+
+                                if( 0 == SetParameterByVoltageList(puch_iData) )
+                                {
+                                        *puch_Data = FPI_CMD_WRT_SUCC;
+                                }
+                                else
+                                {
+                                        *puch_Data = FPI_CMD_WRT_FAIL;
+                                }
+                        }
+                }
+                break;
+#pragma endregion
+        case 0x25://voltage set at one times...
+#pragma region 电压一次性设置,没有使用
+                if(FPI_CMD_RED == GetExCommand())
+                {
+
+                        sch_Re = -10;
+                }
+                else
+                {
+                        SetExCommand(FPI_CMD_WRT_RPY);
+
+                        puch_Data = (INT8U*)AllocBKData(1);
+
+                        //if(0 == SetParameterOneTimes(puch_iData,uin_iLen))
+                        if (TRUE)
+                        {
+                                *puch_Data = FPI_CMD_WRT_SUCC;
+                        }
+                        else
+                        {
+                                *puch_Data = FPI_CMD_WRT_FAIL;
+                        }
+                }
+                break;
+#pragma endregion
+        case 0x34:
+        {
+                if(FPI_CMD_RED == GetExCommand())
+                {
+
+                        sch_Re = -10;
+                }
+                else
+                {
+                        SetExCommand(FPI_CMD_WRT_RPY);
+
+                        puch_Data = (INT8U*)AllocBKData(1);
+
+                        INT8U uch_FuncCode = *(puch_iData + 0);
+                        INT8U uch_Type = *(puch_iData + 1);
+                        //INT16U ush_Len = htons(puch_Data +2);
+                        INT8U uch_Value  = *(puch_iData +4);
+
+
+                        *puch_Data = FPI_CMD_WRT_SUCC;
+
+                        if ( uch_FuncCode == 0x00)
+                        {
+                                //printf("%d\r\n",uch_Value);
+                                if (uch_Value == 0x00)
+                                {
+                                        cl_Xml.m_XmlCoonfig.bIonicEnergyConnected = 0;
+                                        WriteDA(ION_CONNECTED_addr, cl_Xml.m_XmlCoonfig.bIonicEnergyConnected, ION_CONNECTED_syn);
+
+                                }
+                                else if (uch_Value = 0x11)
+                                {
+                                        cl_Xml.m_XmlCoonfig.bIonicEnergyConnected = 1;
+
+                                        WriteDA(ION_CONNECTED_addr, cl_Xml.m_XmlCoonfig.bIonicEnergyConnected, ION_CONNECTED_syn);
+                                }
+                                else
+                                {
+                                        *puch_Data = FPI_CMD_WRT_FAIL;
+                                }
+                        }
+
+                }
+        }
+        break;
+        case 0x30://mnt
+#pragma region MS主板监控
+                if(FPI_CMD_RED == GetExCommand())
+                {
+                        AlarmCodePCGetCnt();
+                        cl_gApp.cl_puMnt.uch_PCCommCnt = 0; //收到命令需要更新该变量。
+                        SetExCommand(FPI_CMD_RED_RPY);
+                        puch_Data = (INT8U*)AllocBKData(264+ 2);
+                        uin_Data = 0;
+                        ClearIndex();
+
+                        AddData(auch_AlarmCode,TOTAL_ALARM_NUM);
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_CapillaryV.f_RealVal);	// 毛细管高压
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_CapillaryI.f_RealVal);	//电晕针电流 st_CapillaryI--->改成毛细管电流
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_SampleConeV.f_RealVal);	//采样锥电压
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_ExtractorV.f_RealVal);	//萃取锥电压
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_RfLenV.f_RealVal);		//传输杆电压
+
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_Ms1PreV.f_RealVal);		//ms1 pre
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_Ms1IonEnergy.f_RealVal);	//ms1 ion energy
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_Ms1LM.f_RealVal);			//MS1LM
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_Ms1HM.f_RealVal);			//MS1HM
+
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_CIDEntranceV.f_RealVal);	//CID ENTRANCE
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_CIDV.f_RealVal);			//CID V
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_CIDEixtV.f_RealVal);		//CID EXIT
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_CIDOverV.f_RealVal);		//碰撞池 外壁电压
+
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_Ms2PreV.f_RealVal);		//MS2 PRE
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_Ms2IonEnergy.f_RealVal);	//MS2 ION ENERGY
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_Ms2LM.f_RealVal);			//MS2 LM
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_Ms2HM.f_RealVal);			//MS2 HM
+
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_EmHighV.f_RealVal);			//倍增器电压？？？
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_EmHighOffsetV.f_RealVal);//倍增器偏转电压
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_Dora.f_RealVal);		//打拿极电压？？？
+
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_Ms1RF.f_RealVal);			//MS1 RF
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_Ms2RF.f_RealVal);			//MS2 RF
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_Ms1DCP.f_RealVal);		//MS1 DCP
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_Ms1DCN.f_RealVal);		//MS1 DCN
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_Ms2DCP.f_RealVal);		//MS2 DCP
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_Ms2DCN.f_RealVal);		//MS2 DCN
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->ESourcePositive5VDigital.f_RealVal);
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->ESourcePositive1Point2VDigital.f_RealVal);
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->ESourcePositive3Point3VDigital.f_RealVal);
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->ESourceNegative5VAnalog.f_RealVal);
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->ESourcePositive5VAnalog.f_RealVal);
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->ESourceNegative14VAnalog.f_RealVal);
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->ESourcePositive14VAnalog.f_RealVal);
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->ESourcePositive3Point3VAnalog.f_RealVal);
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->Reference2Point5VOne.f_RealVal);
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->Reference2Point5VTwo.f_RealVal);
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->Reference1Point25V.f_RealVal);
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->RFPowerESourceVoltage.f_RealVal);	//保留？？？？
+
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_Temperta.f_RealVal);				//主板温度
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_SignBoardTemperatrue.f_RealVal);	//信号版温度
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_DriverBoard1Temperatrue.f_RealVal);//驱动板1温度
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_DriverBoard2Temperatrue.f_RealVal);//驱动板2温度
+
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_VacuValue1.f_RealVal);			//传输杆腔室压力
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_VacuValue2.f_RealVal);			//分析器腔室压力
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_VacuValue3.f_RealVal);			//碰撞池压力
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_VacuValue4.f_RealVal);			//
+
+                        uch_Data = cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_CapiIO*0x11;
+                        AddData(&uch_Data,1);
+                        uch_Data = cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_CoroIO*0x11;
+                        AddData(&uch_Data,1);
+                        uch_Data = cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_EMIO*0x11;
+                        AddData(&uch_Data,1);
+                        uch_Data = cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_DoraIO*0x11;
+                        AddData(&uch_Data,1);
+                        uch_Data = cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_NegionIO*0x11;
+                        AddData(&uch_Data,1);
+                        uch_Data = cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_PumpIO*0x11; //一键待机开关
+                        AddData(&uch_Data,1);
+                        /*uch_Data = cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_PrePumpIO*0x11;
+                        AddData(&uch_Data,1);*/
+                        uch_Data = 0;
+                        AddData(&uch_Data,1);
+
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_EmHighEntranceV.f_RealVal);//倍增器入口电压
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_HV1.f_RealVal);//HV1
+                        //AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_HV2.f_RealVal);//HV2
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_RfLenV.f_RealVal);///HV2
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_BaffleVoltage.f_RealVal);
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_BaffleCurrunt.f_RealVal);
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_Q0out2.f_RealVal);
+                        //AddFP32(0.0);
+                        uch_Data = cl_Xml.m_XmlCoonfig.bIonicEnergyConnected * 0x11;
+                        AddData(&uch_Data,1);
+                        uch_Data = cl_Xml.m_XmlCoonfig.bUseSpellMan* 0x11;
+                        AddData(&uch_Data,1);
+                        uch_Data = cl_Xml.m_XmlCoonfig.bUseDieBan* 0x11;
+                        AddData(&uch_Data,1);
+
+                        uch_Data = cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_ProtectIO*0x11;//保护开关
+                        AddData(&uch_Data,1);
+
+                        uch_Data = cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_BitIO*0x11;//BIT测试状态
+                        AddData(&uch_Data,1);
+                        uch_Data = cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_LBVacuumGIO*0x11;//来宝真空规开关状态
+                        AddData(&uch_Data,1);
+                        OperateRunFlag(LC_MS_SYN_FLAG);
+                        MemoryRead(FPGA_REG,LC_MS_SYN_FLAG_ADDR,&uin_Data); //读取LC 同步标志
+                        uch_Data = (uin_Data > 0)?0x11:0x00;
+                        AddData(&uch_Data,1);
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_LenthDC2.f_RealVal);	//有问题 通信协议需要修改2016.4.12
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_LenthDC3.f_RealVal);
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_LenthDC4.f_RealVal);
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_Rf1Current.f_RealVal);//AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_LenthDC5.f_RealVal);
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_Rf2Current.f_RealVal);//AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_LenthDC6.f_RealVal);
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_HEXPoleV.f_RealVal);
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_LenthDC1.f_RealVal);//2016.6.17
+                        AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_DC7.f_RealVal);
+
+
+                        //AddFP32(cl_gApp.cl_puMnt.GetMntPara()->st_AnologSignal.f_RealVal);//AddFP32(0.0);
+
+
+                        /*uch_Data = 0x00;
+                        AddData(&uch_Data,	1);
+                        AddData(&uch_Data,	1);*/
+
+
+
+                }
+                else if(FPI_CMD_WRT == GetExCommand())
+                {
+                        if(uin_iLen != 2)
+                                sch_Re = -10;
+                        else
+                        {
+                                SetExCommand(FPI_CMD_WRT_RPY);
+                                puch_Data = (INT8U*)AllocBKData(1);
+                                if(0 == SetAverageNum(puch_iData))
+                                {
+                                        *puch_Data = FPI_CMD_WRT_SUCC;
+                                }
+                                else
+                                {
+                                        *puch_Data = FPI_CMD_WRT_FAIL;
+                                }
+                        }
+                }
+
+                else
+                {
+
+                        sch_Re = -10;
+                }
+                break;
+#pragma endregion
+        case 0x40://start ms or stop ms...
+#pragma region 启动MS采样
+                if(FPI_CMD_WRT == GetExCommand())
+                {
+                        EnterCriticalSection(&CriticalSection_AppRun);
+                        if(puch_iData[0] == 0x00)//stop ms...
+                        {
+
+
+                                CString cs_Temp;
+                                cs_Temp = L"COMstop_ms";
+                                AddLogWithTime(cs_Temp);
+
+
+
+                                cl_gApp.SetOpration(MS_STOP);
+
+
+                                puch_Data = (INT8U*)AllocBKData(1);
+                                SetExCommand(FPI_CMD_WRT_RPY);
+                                *puch_Data = FPI_CMD_WRT_SUCC;
+
+
+                                cl_gApp.cl_DataBufferPool.b_InitOk = FALSE;
+                        }
+                        else if(puch_iData[0] == 0x11)//start ms...
+                        {
+                                CString cs_Temp;
+                                cs_Temp = L"COMstart_ms";
+                                AddLogWithTime(cs_Temp);
+
+
+                                cl_gApp.SetOpration(MS_START);
+
+                                puch_Data = (INT8U*)AllocBKData(1);
+                                SetExCommand(FPI_CMD_WRT_RPY);
+                                *puch_Data = FPI_CMD_WRT_SUCC;
+                        }
+                        else
+                        {
+                                sch_Re = -10;
+                        }
+                        LeaveCriticalSection(&CriticalSection_AppRun);
+                }
+                else
+                {
+                        sch_Re = -10;
+                }
+                break;
+#pragma endregion
+        case 0x41:
+#pragma region 扫描片段参数设置
+                if(FPI_CMD_WRT == GetExCommand())
+                {
+                        EnterCriticalSection(&CriticalSection_AppRun);
+                        uin_Data = cl_gMethod.SaveMethod(puch_iData,uin_iLen);//save method...
+                        SetExCommand(FPI_CMD_WRT_RPY);
+                        puch_Data = (INT8U*)AllocBKData(2);
+                        *puch_Data = uin_Data>>8;//back current pack number or "0"
+                        *(puch_Data+1) = uin_Data&0xff;
+                        if(DecodeInt(puch_iData) == uin_Data)
+                        {
+                                CString cs_Temp;
+                                cs_Temp.Format(L"COMchannel %d method download",uin_Data);
+
+                                AddLogWithTime(cs_Temp);
+
+
+                        }
+                        LeaveCriticalSection(&CriticalSection_AppRun);
+                }
+                else
+                {
+                        sch_Re = -10;
+                }
+                break;
+#pragma endregion
+        case 0x42://set method config...
+#pragma region 方法信息设置
+                if(FPI_CMD_WRT == GetExCommand())
+                {
+                        puch_Data = (INT8U*)AllocBKData(1);
+                        SetExCommand(FPI_CMD_WRT_RPY);
+
+                        *puch_Data = FPI_CMD_WRT_FAIL;
+
+                }
+                else
+                {
+                        sch_Re = -10;
+                }
+                break;
+#pragma endregion
+        case 0x47:
+#pragma region 获取扫描数据
+                if(FPI_CMD_RED == GetExCommand())
+                {
+                        SetExCommand(FPI_CMD_RED_RPY);
+
+
+
+#pragma region wxb20130627数据堆积问题
+                        #if 1
+                        INT32U ul_dataLength = cl_gApp.cl_DataBufferPool.GetDataLength(puch_iData[0], MAX_DATA_LEN*2);
+                        if(ul_dataLength > 0)
+                        {//有数据
+                                puch_Data = (INT8U*)AllocBKData(ul_dataLength*2 + 2);
+                                puch_Data[0] = 0x0;//有数据
+                                puch_Data[1] = puch_iData[0];//当前包号
+                                cl_gApp.cl_DataBufferPool.GetdatasToPC(puch_Data + 2, ul_dataLength, puch_iData[0]);
+
+                        }
+                        else
+                        {//无数据
+                                puch_Data = (INT8U*)AllocBKData(1);
+                                puch_Data[0] = 0x01;//无数据
+                        }
+                        #else
+                                INT16U i;
+                                i = cl_gApp.cl_DataBufferPool.GetMthNum();
+
+                                puch_Data = (INT8U*)AllocBKData(i + 2);
+                                memset(puch_Data,2,i+2);
+                                puch_Data[0] = 0x0;//有数据
+                                puch_Data[1] = puch_iData[0];//当前包号
+                                puch_Data[2] = 1;
+                                puch_Data[3] = 0;
+
+                        #endif
+#pragma endregion
+                }
+                else//write...
+                {
+                        sch_Re = -10;
+                }
+                break;
+#pragma endregion 电压 设置、反馈 校准参数
+                case 0x50:
+                {
+                        if(FPI_CMD_WRT == GetExCommand())
+                        {
+                                puch_Data = (INT8U*)AllocBKData(1);
+                                SetExCommand(FPI_CMD_WRT_RPY);
+
+                                *puch_Data = FPI_CMD_WRT_SUCC;
+                                SetParamtoSetVKB(puch_iData);
+
+                                cl_Xml.uch_Changepara = 1;
+
+                        }
+                        else
+                        {
+                                INT16U uin_len = puch_iData[1];
+                                if(uin_len == 0xff)
+                                {
+                                        uin_len =  28;
+                                }
+                                else
+                                {
+                                        uin_len = 1;
+                                }
+                                SetExCommand(FPI_CMD_RED_RPY);
+                                puch_Data = (INT8U*)AllocBKData(uin_len*29+ 2);
+                                ClearIndex();
+                                AddData(puch_iData,2);
+
+                                INT8U CNT = 0;
+                                INT8U uch_type ;
+                                for(CNT =0;CNT <uin_len;CNT++)
+                                {
+                                        FP32 f_temp;
+                                        if((CNT >=0)&&(CNT <=0x0e))
+                                        {
+                                                uch_type = CNT;
+
+                                        }
+                                        else if(CNT ==0x0f)
+                                        {
+                                                uch_type = 0x01f;
+
+                                        }
+                                        else if((CNT >=0x10)&&(CNT <=0x015))
+                                        {
+                                                uch_type = CNT;
+
+                                        }
+                                        else if((CNT >=0x16)&&(CNT <=0x01b))
+                                        {
+                                                uch_type = CNT+3;
+
+                                        }
+                                        if(puch_iData[0]== 0x00)
+                                        {
+                                                AddData(&uch_type,1);
+                                                uch_type = uch_type+31;
+
+                                        }
+                                        else
+                                        {
+                                                AddData(&uch_type,1);
+                                        }
+
+
+
+                                        //QueryNodeText(pschFullPath,g_strxmlparalist[uch_type].ash_max,asch_SelfTest);
+                                        //f_temp =atof(asch_SelfTest);
+                                        AddFP32(cl_Xml.f_Vmax[uch_type]);
+                                        //QueryNodeText(pschFullPath,g_strxmlparalist[uch_type].ash_min,asch_SelfTest);
+                                        //f_temp =atof(asch_SelfTest);
+                                        AddFP32(cl_Xml.f_Vmin[uch_type]);
+
+
+                                        //QueryNodeText(pschFullPath,g_strxmlparalist[uch_type].ash_default,asch_SelfTest);
+                                        //f_temp =atof(asch_SelfTest);
+                                        AddFP32(cl_Xml.f_Vdefault[uch_type]);
+
+                                        //QueryNodeText(pschFullPath,g_strxmlparalist[uch_type].ash_setvk,asch_SelfTest);
+                                        //f_temp =atof(asch_SelfTest);
+                                        AddFP32(cl_Xml.f_Setkneg[uch_type]);
+                                        //QueryNodeText(pschFullPath,g_strxmlparalist[uch_type].ash_setvb,asch_SelfTest);
+                                        //f_temp =atof(asch_SelfTest);
+                                        AddFP32(cl_Xml.f_Setbneg[uch_type]);
+                                        //QueryNodeText(pschFullPath,g_strxmlparalist[uch_type].ash_refvk,asch_SelfTest);
+                                        //f_temp =atof(asch_SelfTest);
+                                        AddFP32(cl_Xml.f_Reflectkneg[uch_type]);
+                                        //QueryNodeText(pschFullPath,g_strxmlparalist[uch_type].ash_refvb,asch_SelfTest);
+                                        //f_temp =atof(asch_SelfTest);
+                                        AddFP32(cl_Xml.f_Reflectbneg[uch_type]);
+                                }
+
+                        }
+
+                }
+                break;
+
+#pragma endregion
+        default:
+                sch_Re = -9;
+                break;
+        }
+        return sch_Re;
+}
+
+//==================================================================================================
+//| 函数名称 | SetSwitch
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 |
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 |
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | 1 -- 操作异常， 0 -- 操作成功
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | lxlll,2012.05.25
+//==================================================================================================
+INT8U CTCPCommand::SetSwitch(INT8U *puch_iData)
+{
+        CString cs_Temp;
+
+        if(puch_iData == NULL)
+                return 1;
+        else
+        {
+                switch(puch_iData[0])
+                {
+                case 0x00://倍增器入口高压
+                        if(puch_iData[1] == 0x00){
+                                cs_Temp = L"COM em enter high voltage off";
+                                AddLogWithTime(cs_Temp);
+                                OperateSwitch(CAPI_SW,SWITCH_OFF);
+                                cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_CapiIO = 0;}
+                        else if(puch_iData[1] == 0x11){
+                                cs_Temp = L"COM em enter high voltage on";
+                                AddLogWithTime(cs_Temp);
+                                OperateSwitch(CAPI_SW,SWITCH_ON);
+                                cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_CapiIO = 1;}
+                        else{
+                                return 1;}
+                        break;
+                case 0x01://毛细管高压（电晕针）
+                        if(puch_iData[1] == 0x00){
+                                cs_Temp = L"COM capi high voltage off";
+                                AddLogWithTime(cs_Temp);
+                                OperateSwitch(CORO_SW,SWITCH_OFF);
+                                cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_CoroIO = 0;}
+                        else if(puch_iData[1] == 0x11){
+                                cs_Temp = L"COM capi high voltage on";
+                                AddLogWithTime(cs_Temp);
+                                OperateSwitch(CORO_SW,SWITCH_ON);
+                                cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_CoroIO = 1;
+
+                        ////更新毛细管高压的设置时间
+                        //STRCheckVoltageList *pstrCheckVol = GetCheckVoltageListPtr();
+                        //pstrCheckVol[7].ul_WriteTime = GetTickCount();
+
+                        }
+                        else{
+                                return 1;}
+                        break;
+                case 0x02://倍增器
+                        if(puch_iData[1] == 0x00){
+                                cs_Temp = L"COM emio off";
+                                AddLogWithTime(cs_Temp);
+                                OperateSwitch(EM_SW,SWITCH_OFF);
+                                cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_EMIO = 0;}
+                        else if(puch_iData[1] == 0x11){
+                                cs_Temp = L"COM emio on";
+                                AddLogWithTime(cs_Temp);
+                                OperateSwitch(EM_SW,SWITCH_ON);
+                                cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_EMIO = 1;}
+                        else{
+                                return 1;}
+                        break;
+                case 0x03://打拿极开关
+                        if(puch_iData[1] == 0x00){
+                                cs_Temp = L"COM dora off";
+                                AddLogWithTime(cs_Temp);
+                                OperateSwitch(DORA_SW,SWITCH_OFF);
+                                cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_DoraIO = 0;}
+                        else if(puch_iData[1] == 0x11){
+                                cs_Temp = L"COM dora on";
+                                AddLogWithTime(cs_Temp);
+                                OperateSwitch(DORA_SW,SWITCH_ON);
+                                cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_DoraIO = 1;}
+                        else{
+                                return 1;}
+                        break;
+                case 0x04://倍增器开关
+                        if(puch_iData[1] == 0x00){
+                                cs_Temp = L"COM negionIO off";
+                                AddLogWithTime(cs_Temp);
+                                OperateSwitch(NEGION_SW,SWITCH_OFF);
+                                cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_NegionIO = 0;}
+                        else if(puch_iData[1] == 0x11){
+                                cs_Temp = L"COM negionIO on";
+                                AddLogWithTime(cs_Temp);
+                                OperateSwitch(NEGION_SW,SWITCH_ON);
+                                cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_NegionIO = 1;}
+                        else{
+                                return 1;}
+                        break;
+                case 0x05://一键待机
+                {
+                        STREnvMnt  *pstrEnvMnt = GetEnvErr();
+                        if(puch_iData[1] == 0x00)
+                        {
+                                cs_Temp.Format( L"COM one key stand up off __pump speed%f",pstrEnvMnt->strPumpSpeed.f_RealVal);
+                                AddLogWithTime(cs_Temp);
+                                OperateRunFlag(ONE_KEY_OFF);
+                                //OperateSwitch(PUMP_SW,SWITCH_OFF);
+                                cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_PumpIO = 0;
+                        }
+                        else if(puch_iData[1] == 0x11)
+                        {
+
+                                cs_Temp.Format( L"COM one key stand up on __pump speed%f",pstrEnvMnt->strPumpSpeed.f_RealVal);
+                                AddLogWithTime(cs_Temp);
+                                OperateRunFlag(ONE_KEY_ON);
+                                //OperateSwitch(PUMP_SW,SWITCH_ON);
+                                cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_PumpIO = 1;
+                        }
+                        else
+                        {
+                                return 1;
+                        }
+                }
+                        break;
+                case 0x06:
+                case 0x07:
+                case 0x08:
+                case 0x09:
+                case 0x0a:
+                        break;
+                case 0x0b://BIT单板测试开关
+                        if(puch_iData[1] == 0x00)
+                        {
+                                OperateSwitch(BIT_SW,SWITCH_OFF);
+                                cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_BitIO = 0;
+                        }
+                        else if(puch_iData[1] == 0x11)
+                        {
+                                OperateSwitch(BIT_SW,SWITCH_ON);
+                                cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_BitIO = 1;
+                        }
+                        else
+                        {
+                                return 1;
+                        }
+                        break;
+                case 0x0c://来宝真空规开关
+                        if(puch_iData[1] == 0x00)
+                        {
+                                OperateSwitch(LBVacuumG_SW,SWITCH_OFF);
+                                cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_LBVacuumGIO = 0;
+                        }
+                        else if(puch_iData[1] == 0x11)
+                        {
+                                OperateSwitch(LBVacuumG_SW,SWITCH_ON);
+                                cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_LBVacuumGIO = 1;
+                        }
+                        else
+                        {
+                                return 1;
+                        }
+                        break;
+                case 0x0d://保护开关
+                        if(puch_iData[1] == 0x00)
+                        {
+                                //OperateSwitch(LBVacuumG_SW,SWITCH_OFF);
+                                OperateRunFlag(PROTECT_SYS_OFF);
+                                cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_ProtectIO = 0;
+                        }
+                        else if(puch_iData[1] == 0x11)
+                        {
+                                //OperateSwitch(LBVacuumG_SW,SWITCH_ON);
+                                OperateRunFlag(PROTECT_SYS_ON);
+                                cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_ProtectIO = 1;
+                        }
+                        else
+                        {
+                                return 1;
+                        }
+                        break;
+                case 0x0e://rf调谐 lz2016.7.12
+
+                        if(puch_iData[1] == 0x00)
+                        {
+
+                                cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_RfTune = 0;
+
+                                cl_gApp.SetTimer(MNT_TIMER_ID,500);
+                        }
+                        else if( puch_iData[1] == 0x11 )
+                        {
+                                cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_RfTune = 1;
+
+                                cl_gApp.SetTimer(MNT_TIMER_ID,50);
+                        }
+                        break;
+
+                case 0x30://消除弹窗报警码
+                        if(puch_iData[1] == 0x11)
+                        {
+                                ClearPopAlarm();
+                        }
+                        break;
+
+                default:
+                        return 1;
+                }
+        }
+        return 0;
+}
+
+INT8U CTCPCommand::SetAverageNum(INT8U *puch_iData)
+{
+        INT16U uin_Temp;
+        if(puch_iData == NULL)
+                return 1;
+        else
+        {
+                switch(puch_iData[0])
+                {
+                case 0x00:
+                        if(puch_iData[1] <= 32){
+                                uin_Temp = puch_iData[1];
+                                //MemoryWrite(FPGA_REG, AD_AD7689_AVE_addr,&uin_Temp); //设置硬件平均
+                                cl_gApp.cl_puMnt.uch_AverageNum = puch_iData[1]; //设置软件采集平均
+                        }
+                        else{
+                                return 1;
+                        }
+                        break;
+                default:
+                        return 1;
+                }
+        }
+        return 0;
+}
+

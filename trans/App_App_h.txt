@@ -1,0 +1,351 @@
+//==================================================================================================
+//| 文件名称 | App_App.h
+//|--------- |--------------------------------------------------------------------------------------
+//| 文件描述 | Pub_CBuf.h所对应的头文件
+//|--------- |--------------------------------------------------------------------------------------
+//| 版权声明 | Copyright2009, 聚光科技(FPI)
+//|----------|--------------------------------------------------------------------------------------
+//|  版本    |  时间       |  作者     | 描述
+//|--------- |-------------|-----------|------------------------------------------------------------
+//|  V1.1    | 2009.04.24  | Gang      | 规范化
+//|  V1.2    | 2009.10.30  | Gang      | 准备进行单元测试
+//==================================================================================================
+#ifndef APP_APP_H
+#define APP_APP_H
+
+//--------------------------------------------------------------------------------------------------
+
+
+
+
+#include <string.h>
+#include "TypeDefine.h"
+#include "Pub_CTime.h"
+#include "Pub_CQhsm.h"
+#include "Winsock.h"
+#include "Pub_TQeque.h"
+#include "Mod_Mnt.h"
+#include "Mod_IOCtr.h"
+#include "Mod_Method.h"
+#include "Mod_WriteDebugLog.h"
+#include "Pub_Queue.h"
+//==================================================================================================
+//| 名    称 | DataBufferPool
+//|--------- |--------------------------------------------------------------------------------------
+//| 描    述 | 数据缓存池：注意多线程操作，需加锁，用于数据堆积问题wxb20130627
+//|--------- |--------------------------------------------------------------------------------------
+//| 版权声明 | Copyright2009, 聚光科技(FPI)
+//|----------|--------------------------------------------------------------------------------------
+//|  版本    |  时间       |  作者     | 描述
+//|--------- |-------------|-----------|------------------------------------------------------------
+//|  V1.1    | 2013.06.24  |wxb        | 规范化
+//==================================================================================================
+#include "Pub_Fun.h"
+#include "Pro_Api.h"
+
+
+
+static CRITICAL_SECTION CriticalSection_DataBuffer;//锁
+class DataBufferPool
+{
+public:
+        DataBufferPool()
+        {
+                InitializeCriticalSection(&CriticalSection_DataBuffer);
+                ul_MaxLength = 10* 1024 * 1024;//20M字节，10M字
+                ul_AutoLength = 1024 * 1024;//2M字节，1M字
+                puin_Buffer = new INT16U[ul_AutoLength];
+                ul_BufferLength = ul_AutoLength;
+                puin_Data = puin_Buffer;
+                ul_DataLength = 0;
+                uch_PackNo = 1;
+
+                //uin_RemainDataLength = 0;
+                ul_RemainDataLength = 0;
+                //puin_MethodPointCount = new INT16U[SECT_MAX_NUM];
+                //b_isEnd = false;
+                b_InitOk = FALSE;
+        }
+        ~DataBufferPool()
+        {
+                delete[] puin_Buffer;
+                //delete[] puin_MethodPointCount;
+                puin_Buffer = NULL;
+                puin_Data = NULL;
+                //puin_MethodPointCount = NULL;
+        }
+
+        bool GetDatasFromFPGA()
+        {
+                bool b_result = false;
+                INT16U uin_tmpDataLength = MAX_DATA_LEN*2;
+                INT16U uin_current_method_point;
+                /*if(b_isEnd)
+                {
+                        return false;
+                }*/
+
+
+                EnterCriticalSection(&CriticalSection_DataBuffer); //修改到线程中执行该锁
+                //if(0 == uin_RemainDataLength)
+                if (0 == ul_RemainDataLength)
+                {//上次已获取方法片段的所有数据
+                        INT16U methodNo;
+                        MemoryRead(DSRAM_DATA,0,&methodNo);//获取方法片段号
+
+                        MemoryRead(DSRAM_DATA,1,&uin_current_method_point); //获取该方法片段所有的点数
+                        //??????TODO运行方法结束标志“0xFFFF”如何解析，即片段号为0xFFFF时，该如何处理，需增加方法运行结束的标志吗？
+                        /*if(methodNo == 0xFFFF)
+                        {
+                                uin_RemainDataLength = 1;
+                                b_isEnd = true;
+                        }*/
+                        //methodNo = 1;
+                        if((methodNo <= 0) || (methodNo > SECT_MAX_NUM) || (uin_current_method_point <= 0))
+                        {
+                                //uin_RemainDataLength = 0;
+                                ul_RemainDataLength = 0;
+                                LeaveCriticalSection(&CriticalSection_DataBuffer);
+                                //Sleep(1);
+                                return true;
+                        }
+                        else
+                        {
+                                //uin_RemainDataLength = puin_MethodPointCount[methodNo - 1] + 1;//获取数据长度
+                                ul_RemainDataLength = uin_current_method_point*2 + 2; //数据内容+ 1个方法片段号+1个数据大小 （16bit）
+                        }
+                }
+
+                //if(uin_tmpDataLength > uin_RemainDataLength)
+                if(uin_tmpDataLength > ul_RemainDataLength)
+                {
+                        //uin_tmpDataLength = uin_RemainDataLength;
+                        uin_tmpDataLength = ul_RemainDataLength;
+                }
+
+
+                //最大内存限制
+                if(((INT32U)(puin_Data - puin_Buffer)  + ul_DataLength + uin_tmpDataLength) > ul_BufferLength && ul_BufferLength + ul_AutoLength <= ul_MaxLength)
+                {//缓存内存不足，需重新申请
+                        INT16U *puch_tmp = puin_Buffer;
+                        puin_Buffer = new INT16U[ul_BufferLength + ul_AutoLength];
+                        memset(puin_Buffer, 0, (ul_BufferLength + ul_AutoLength) * 2);
+                        memcpy(puin_Buffer, puch_tmp, ul_BufferLength * 2);
+                        puin_Data = puin_Buffer + (puin_Data - puch_tmp);
+                        ul_BufferLength += ul_AutoLength;
+
+                        CString cs_Temp;
+                        cs_Temp = L"data memery be long";
+                        AddLogWithTime(cs_Temp);
+
+                        delete[] puch_tmp;
+                }
+
+                if((INT32U)(puin_Data - puin_Buffer) + ul_DataLength + uin_tmpDataLength <= ul_BufferLength)
+                {//获取数据
+                        MemoryRead(DSRAM_DATA, 0, puin_Data + ul_DataLength, uin_tmpDataLength);
+                        ul_DataLength += uin_tmpDataLength;
+                        ul_RemainDataLength -= uin_tmpDataLength;
+                        b_result = true;
+                }
+
+                LeaveCriticalSection(&CriticalSection_DataBuffer);
+                Sleep(1);
+
+
+                return b_result;
+        }//end GetDatasFromFPGA()
+
+
+        void GetdatasToPC(void * pTarget, INT32U ul_dataLength, INT8U uch_packNo)
+        {
+                EnterCriticalSection(&CriticalSection_DataBuffer);
+                if(uch_packNo == uch_PackNo)
+                {//包号一致，需重新发送
+                        ul_DataLength += puin_Data - puin_Buffer;
+                        puin_Data = puin_Buffer;
+
+                        CString cs_Temp;
+                        cs_Temp.Format(L"GETDATA NO%d Resend",uch_PackNo);
+                        AddLogWithTime(cs_Temp);
+                }
+                else
+                {//包号不一致，说明上次已发送成功，删除上次发送的数据
+                        //memset(puin_Buffer,0,(puin_Data - puin_Buffer)*2);
+                        memcpy(puin_Buffer, puin_Data, ul_DataLength * 2);//注意：memcpy中的长度是以字节为单位
+                        puin_Data = puin_Buffer;
+
+
+
+                }
+                INT32U ul_tmpDataLength = ul_dataLength;
+                if (ul_tmpDataLength > ul_DataLength)
+                        ul_tmpDataLength = ul_DataLength;
+                if(ul_tmpDataLength > 0)
+                {
+                        memcpy(pTarget, puin_Data, ul_tmpDataLength * 2);
+                        puin_Data += ul_tmpDataLength;
+                        ul_DataLength -= ul_tmpDataLength;
+                        uch_PackNo = uch_packNo;
+                }
+                LeaveCriticalSection(&CriticalSection_DataBuffer);
+                Sleep(2);
+                return;
+        }
+        INT32U GetDataLength(INT8U uch_packNo, INT32U ul_dataLength)
+        {
+                //EnterCriticalSection(&CriticalSection_DataBuffer);
+                if (!b_InitOk)
+                {
+                        return 0;
+                }
+
+                if(uch_packNo == uch_PackNo)
+                {//包号一致，需重新发送
+                        return (ul_dataLength > ul_DataLength + puin_Data - puin_Buffer) ? (ul_DataLength + puin_Data - puin_Buffer) : ul_dataLength;
+                }
+                else
+                {//包号不一致，说明上次已发送成功
+                        return (ul_dataLength > ul_DataLength) ? ul_DataLength : ul_dataLength;
+                }
+
+                //LeaveCriticalSection(&CriticalSection_DataBuffer);
+
+                return 0;
+        }
+        void Init()
+        {
+                EnterCriticalSection(&CriticalSection_DataBuffer);
+                puin_Data = puin_Buffer;
+                ul_DataLength = 0;
+                uch_PackNo = 1;
+                //uin_RemainDataLength=0;
+                ul_RemainDataLength = 0;
+                //b_isEnd = false;
+                //memset(puin_MethodPointCount, 0, SECT_MAX_NUM * 2);
+                //memset(puin_Buffer, 0, ul_BufferLength * 2);
+                b_InitOk = TRUE;
+                LeaveCriticalSection(&CriticalSection_DataBuffer);
+
+                CString cs_Temp;
+                cs_Temp = L"GETDATAbuf Init";
+                AddLogWithTime(cs_Temp);
+
+
+        }
+        INT16U* GetMethodPointCountAddress()
+        {
+                //return puin_MethodPointCount;
+        }
+
+        INT16U GetMthNum()
+        {
+                //return ((puin_MethodPointCount[0]*2 + 1)*2);//BYTE
+        }
+
+protected:
+private:
+        INT32U ul_MaxLength;		//20M字节，10M字
+        INT32U ul_AutoLength;		//2M字节，1M字
+        INT8U  uch_PackNo;			//数据包号
+        INT16U *puin_Buffer;		//缓存起始地址
+        INT32U ul_BufferLength;		//缓存长度
+        INT16U *puin_Data;			//有效数据起始地址
+        INT32U ul_DataLength;		//有效数据长度
+
+        //INT16U uin_RemainDataLength;	//当前方法片段还需获取的数据长度
+        INT32U ul_RemainDataLength;
+        //INT16U *puin_MethodPointCount;	//存放各个方法片段的数据点数
+
+        //bool b_isEnd;//是否采集结束
+public:
+        BOOL b_InitOk;
+};
+
+
+//--------------------------------------宏定义------------------------------------------------------
+
+//定时器类型
+#define MNT_TIMER_ID    0 //监控定时器ID
+#define IO_CTR_ID       1//io控制定时器ID
+
+
+#define PASS_DATA_OVER_ID   2
+#define WRITE_PARATOXML     4
+
+#define MS_START 1
+#define MS_STOP 2
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
+class CApp : public QHsm
+{
+public:
+        CApp();
+        ~CApp()
+        {
+
+        };
+
+        void OnTimer(INT8U uch_iID);
+        void Process(void);
+        void PreProcess(void);
+        void InitPeripheral(void);
+        void StateInit(void);
+        void DistroyProcess(void);
+        INT8U SystemInit(void);
+        BOOL SetOpration(INT8U uch_Op);
+        BOOL GetOpration(INT8U* puch_Op);
+        //状态机相关函数.....
+
+
+
+        CMnt cl_puMnt;
+        CIOCtr cl_puIOCtr;
+
+        INT16U uin_Inter;
+
+        INT8U m_uchOpration;
+
+
+        INT8U m_uchMSRunState;
+
+#pragma region wxb20130627数据堆积问题
+        DataBufferPool cl_DataBufferPool;
+#pragma endregion
+protected:
+
+private:
+
+
+        INT8U uch_IOSetTimeOut;
+        INT8U uch_MntTimeOut;
+        INT8U uch_WriteXmlTimeOut;
+
+        INT8U uch_mEventCnt;
+        INT8U uch_mMethodFlag;
+        SOCKET st_pvCanSocket;
+
+        HANDLE st_mEventHandle[3];
+        INT32U ul_pvIONumber;
+        DWORD ul_pvONumber;
+        DWORD ul_pvINumber;
+
+        static DWORD  IRQReadThread(LPVOID pData);
+
+};
+
+
+extern CApp cl_gApp;
+#ifdef __cplusplus
+}
+#endif
+#endif
+
+
+
+
+
+

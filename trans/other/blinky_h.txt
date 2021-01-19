@@ -1,0 +1,31 @@
+#ifndef BLINKY_H
+#define BLINKY_H
+
+#include "qpcpp.h"
+
+
+enum BlinkySignals {
+    TIMEOUT_SIG = QP::Q_USER_SIG,
+    MAX_SIG
+};
+
+/*============== ask QM to declare the Blinky class ================*/
+//$declare${AOs::Blinky} vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv
+//${AOs::Blinky} .............................................................
+class Blinky : public QP::QActive {
+public:
+    Blinky();
+
+private:
+    QP::QTimeEvt m_timeEvt;
+
+
+protected:
+    Q_STATE_DECL(initial);
+    Q_STATE_DECL(off);
+    Q_STATE_DECL(on);
+};
+//$enddecl${AOs::Blinky} ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+
+#endif // BLINKY_H

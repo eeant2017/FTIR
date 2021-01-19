@@ -1,0 +1,89 @@
+#ifndef PRO_API_H
+#define PRO_API_H
+
+#include "TypeDefine.h"
+#include "Api_Xml.h"//lz2015.12.25
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+//type of memory
+#define EEPROM    0//ARM 外部EEPROM
+#define DSRAM_RECT      1//保存扫描片段的时候用
+#define DSRAM_METHOD     2//保存方法配置信息的时候用
+#define FPGA_REG  3//访问FPGA REG
+#define DSRAM_DATA     4
+#define DSRAM_TEST     5//test use
+#define	DSRAM_ADDR_TEST 6
+#define TEST_ADDR_VERSION 1
+
+#define CS2  0x0
+#define CS3  0x1000000//16MW
+#define CS4  0x2000000
+#define CS5  0x3000000
+#define CS6  0x4000000
+//type of switch
+#define RED_LAMP     0
+#define GREEN_LAMP   1
+//type of switch
+#define SWITCH_ON     1
+#define SWITCH_OFF    2
+#define SWITCH_TURN   3
+//operating of switch...
+
+
+
+
+
+#define FPGA_RUN			0
+#define ARM_RUN				1
+
+#define ARM_ERROR			2
+#define ARM_ALARM			3
+
+#define MS1_DC_SW			10
+#define MS2_DC_SW			11
+#define MS1_RF_SW			12
+#define MS2_RF_SW			13
+#define CORO_SW				14
+#define DORA_SW				15
+#define NEGION_SW			16
+#define EM_SW				17
+#define EM_PROTECT_SW		18
+#define PRE_PUMP_SW			19
+#define PUMP_SW				20
+#define CAPI_SW				21
+#define BIT_SW				30//wxb
+#define LBVacuumG_SW		31//wxb
+
+
+
+
+//adrrss of eeprom
+#define PARAMETER_PAGE1              AT24C512_PAGE(1)
+#define PARAMETER_PAGE2              AT24C512_PAGE(2)
+#define PARAMETER_VOLTAGE_OFFSET     (PARAMETER_PAGE1 + 0)
+#define PARAMETER_ID                 (PARAMETER_PAGE2 + 1)
+
+#define SELF_TEST_PAGE               AT24C512_PAGE(3)
+
+INT8U ADCInit(INT8U uch_Type);
+INT8U ADCOperate(INT8U uch_Type,INT8U uch_Channel,FP32*f_DataIn);
+INT8U DACInit(INT8U uch_Type);
+INT8U DACOperate(INT8U uch_Type,INT8U uch_Channel,FP32 f_DataIn);
+INT8U MemoryInit(void);//eeprom inital
+INT8U MemoryClose(void);
+INT8U MemoryRead(INT8U uch_iType,const INT16U uin_Adrr,INT16U *uin_pData,INT16U uin_DataLen = 1);
+INT8U MemoryWrite(INT8U uch_iType,const INT16U uin_Adrr,const void *uin_pData,INT16U uin_DataLen = 1);
+void OperateRunFlag(INT8U uch_iState,INT16U uin_iAddr = 12);
+void SwitchInit(void);
+void OperateSwitch(INT8U uch_SwitchType,INT8U uch_OperType);
+void ReadFPGAVersion(INT8U *puch_Data);
+
+#ifdef __cplusplus
+}
+#endif
+
+#endif
+
+//no more

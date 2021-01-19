@@ -1,0 +1,112 @@
+//==================================================================================================
+//| 文件名称 | Mod_Env.h
+//|--------- |--------------------------------------------------------------------------------------
+//| 文件描述 | Mod_Env.cpp所对应的头文件
+//|--------- |--------------------------------------------------------------------------------------
+//| 版权声明 | Copyright2009, 聚光科技(FPI)
+//|----------|--------------------------------------------------------------------------------------
+//|  版本    |  时间       |  作者     | 描述
+//|--------- |-------------|-----------|------------------------------------------------------------
+//|  V1.1    | 2016.08.05  |  lz       | 规范化
+//==================================================================================================
+
+#ifndef		_MOD_ENV_H_
+#define		_MOD_ENV_H_
+
+#include "TypeDefine.h"
+
+#define N_MAX_RPONTER  5    //路由段数
+#define N_COMMU_BUF    1600  //数据缓存区
+
+
+typedef struct
+{
+        INT8U   buf[N_COMMU_BUF];			//数据缓存
+        INT8U   uch_Port; 					//端口号
+        INT8U   uch_Status;          		//状态标志
+        INT8U   uch_Protocol;        		//所使用的通讯协议
+        INT16U  uin_HaveRecBytes;
+        INT16U  uin_HaveTransBytes;
+        INT16U  uin_TotalTransBytes;
+        INT16U  uin_DataLen;
+}COMMUNICATE;
+
+
+typedef struct
+{
+        //数据帧起始标志位
+        INT8U  auch_FrameStart[2];
+        //目标地址域
+        INT8U  uch_SrcLen;
+        INT8U  uch_SrcBuf[N_MAX_RPONTER];
+        //源地址域
+        INT8U  uch_DestLen;
+        INT8U  uch_DestBuf[N_MAX_RPONTER];
+        //数据域
+        INT8U  uch_Cmd;           //命令码
+        INT8U  uch_AddCmd;        //附加命令码
+        INT16U uin_DataLen;       //数据区长度
+        INT8U  *puch_Data;        //路由地址列表指针
+        //CRC校验
+        INT16U uin_Crc;
+        //数据帧结束标志位
+        INT8U  auch_FrameEnd[2];
+}FRAMESTRUCT;
+
+typedef struct
+{
+        FP32 f_MaxVal;
+        FP32 f_MinVal;
+        FP32 f_RealVal;
+}STREnvAtt;
+
+typedef struct
+{
+        //from env mnt
+        INT8U b_DesolFluxErr	:1;//low bit
+        INT8U b_NebFluxErr		:1;
+        INT8U b_CurtainFluxErr	:1;
+        INT8U b_CidFluxErr		:1;
+
+        INT8U b_DesolTempErr	:1;
+        INT8U b_IonicTempErr	:1;
+
+        INT8U b_rsv1			:1;
+        INT8U b_rsv2			:1;
+
+}StrEnvErr;
+
+typedef union
+{
+        StrEnvErr Bits;
+
+        INT8U ush_ErrFlag;
+}StrEnvErrDetect;
+
+typedef struct
+{
+        STREnvAtt strPumpCurrent;
+        STREnvAtt strEnvTemp;
+        STREnvAtt strPumpSpeed;
+        STREnvAtt strPumpTemp;
+
+        StrEnvErrDetect strEnvErrDetect;
+        INT8U b_ExhaustGasesValve;
+        INT8U b_CircuStandbyIO;
+        INT8U b_N2Valve;
+}STREnvMnt;
+
+
+extern STREnvMnt g_strEnvMnt;
+extern INT8U auch_CircuAlarmCode[10];
+extern INT8U ParseEnvMnt(INT8U *puch_Data,INT16U ush_Len);
+extern STREnvMnt *GetEnvErr(void);
+INT8U CircuBoardCommSend(INT8U uch_Cmd,INT8U uch_AddCmd,INT8U *puch_data,INT16U uch_len);
+
+
+
+
+
+#endif
+
+//no more

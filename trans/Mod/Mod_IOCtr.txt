@@ -1,0 +1,147 @@
+//==================================================================================================
+//| 文件名称 | Mod_IOCtr.cpp
+//|--------- |--------------------------------------------------------------------------------------
+//| 文件描述 | 控制GPIO ARM的gpio 和 fpga的 gpio
+//|--------- |--------------------------------------------------------------------------------------
+//| 版权声明 | Copyright2011, 聚光科技(FPI)
+//|----------|--------------------------------------------------------------------------------------
+//|  版本    |  时间       |  作者     | 描述
+//|--------- |-------------|-----------|------------------------------------------------------------
+//|  V1.2    | 2017.05.02  |lyb		   | 规范化
+//==================================================================================================
+#include "Mod_IOCtr.h"
+#include "Pub_Fun.h"
+
+#include "Pro_Api.h"
+
+#pragma comment(lib,".\\lib\\epcLedLib.lib")
+#include  "epcLedLib.h"
+
+//==================================================================================================
+//| 函数名称 | process
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 |
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | 无
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | void
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 |
+//==================================================================================================
+void CIOCtr::Process()
+{
+        static INT32U ul_CurTick = GetTickCount();
+
+        //RDY YELLOW ALARM LED
+
+        //if ( GetTickCount() - ul_CurTick > 500)
+        //{
+        //	ul_CurTick = GetTickCount();
+        //}
+        //else
+        //{
+        //	return;
+        //}
+        //
+        if( GetSTRIOObject()->uch_RdyLed == LED_ON )
+        {
+                OperateSwitch(ARM_ALARM,SWITCH_ON);
+        }
+        else if ( GetSTRIOObject()->uch_RdyLed == LED_OFF )
+        {
+                OperateSwitch(ARM_ALARM,SWITCH_OFF);
+        }
+        else if ( GetSTRIOObject()->uch_RdyLed == LED_SHINE )
+        {
+                if(b_mRdyState == TRUE)
+                {
+                        b_mRdyState = FALSE;
+                        OperateSwitch(ARM_ALARM,SWITCH_ON);
+                }
+                else
+                {
+                        b_mRdyState = TRUE;
+                        OperateSwitch(ARM_ALARM,SWITCH_OFF);
+
+                }
+        }
+
+        //RED ERR
+        if( GetSTRIOObject()->uch_ErrLed == LED_ON )
+        {
+                OperateSwitch(ARM_ERROR,SWITCH_ON);
+        }
+        else if ( GetSTRIOObject()->uch_ErrLed == LED_OFF )
+        {
+                OperateSwitch(ARM_ERROR,SWITCH_OFF);
+        }
+        else if ( GetSTRIOObject()->uch_ErrLed == LED_SHINE )
+        {
+                if(b_mErrState)
+                {
+                        OperateSwitch(ARM_ERROR,SWITCH_ON);
+
+                        b_mErrState = FALSE;
+                }
+                else
+                {
+                        OperateSwitch(ARM_ERROR,SWITCH_OFF);
+                        b_mErrState = TRUE;
+                }
+        }
+
+        //GREEN RUN
+        if( GetSTRIOObject()->uch_RunLed == LED_SHINE )
+        {
+                if(b_mRunState)
+                {
+                        OperateSwitch(ARM_RUN,SWITCH_ON);
+
+                        b_mRunState = FALSE;
+                }
+                else
+                {
+                        //OperateSwitch(ARM_RUN,SWITCH_ON);
+                        OperateSwitch(ARM_RUN,SWITCH_OFF);
+                        b_mRunState = TRUE;
+                }
+
+        }
+        else if ( GetSTRIOObject()->uch_RunLed == LED_ON )
+        {
+                        OperateSwitch(ARM_RUN,SWITCH_ON);
+        }
+        else if ( GetSTRIOObject()->uch_RunLed == LED_OFF )
+        {
+                        OperateSwitch(ARM_RUN,SWITCH_OFF);
+        }
+
+
+        return ;
+}
+
+//==================================================================================================
+//| 函数名称 | CMnt
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | 构造函数
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | 无
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | void
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | lxlll 2011.04.11
+//==================================================================================================
+CIOCtr::CIOCtr()
+{
+        b_mRunState = TRUE;
+        b_mRdyState = TRUE;
+
+        uch_mAlarmFlag = 0;
+
+        st_mStrIO.uch_ProtectIO = 1;
+        //st_mStrIO.uch_NebGate = 1;
+}
+
+
+
+

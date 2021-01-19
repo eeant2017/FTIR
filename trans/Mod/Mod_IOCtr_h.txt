@@ -1,0 +1,109 @@
+//==================================================================================================
+//| 文件名称 | Pub_CBuf.h
+//|--------- |--------------------------------------------------------------------------------------
+//| 文件描述 | Pub_CBuf.h所对应的头文件
+//|--------- |--------------------------------------------------------------------------------------
+//| 版权声明 | Copyright2009, 聚光科技(FPI)
+//|----------|--------------------------------------------------------------------------------------
+//|  版本    |  时间       |  作者     | 描述
+//|--------- |-------------|-----------|------------------------------------------------------------
+//|  V1.1    | 2009.04.24  | Gang      | 规范化
+//|  V1.2    | 2009.10.30  | Gang      | 准备进行单元测试
+//==================================================================================================
+#ifndef MOD_IOCTR_H
+#define MOD_IOCTR_H
+
+//--------------------------------------------------------------------------------------------------
+
+
+#include <string.h>
+#include "TypeDefine.h"
+
+
+
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+#define FAULT_ALARM   1
+#define FALLT_ERROR   2
+
+#define  LED_ON				0
+#define  LED_OFF			1
+#define  LED_SHINE			2
+
+//--------------------------------------宏定义------------------------------------------------------
+typedef struct
+{
+        INT8U uch_CapiIO		:1;
+        INT8U uch_PumpIO		:1;
+        INT8U uch_EMIO			:1;
+        INT8U uch_DoraIO		:1;
+
+        INT8U uch_PrePumpIO		:1;
+        INT8U uch_NegionIO		:1;
+
+        INT8U uch_CoroIO		:1;
+        INT8U uch_BitIO			:1;//wxb
+
+        INT8U uch_LBVacuumGIO	:1;//wxb
+        INT8U uch_ProtectIO		:1;//agan
+        INT8U uch_RfTune		:1;//lz
+
+        INT8U uch_RunLed		:2;
+        INT8U uch_RdyLed		:2;
+        INT8U uch_ErrLed		:2;
+
+        //INT8U uch_NebGate       :1;
+
+}STRIOPtr;
+
+class CIOCtr
+{
+public:
+        CIOCtr();
+        ~CIOCtr()
+        {
+
+        };
+        void Process(void);
+        void PreProcess(void);
+   // void OnTimer(TEvent Ev_ID);//the callback function of timerprotected:
+    void SetRunFlag(BOOL b_data)
+    {
+                b_mRunState = b_data;
+    }
+    void SetAlarmFlag(INT8U uch_Data)
+    {
+        uch_mAlarmFlag = uch_Data;
+    }
+    //get IOCon object...
+        STRIOPtr *GetSTRIOObject()
+        {
+                return &st_mStrIO;
+        }
+    //get IOCon object...
+private:
+        STRIOPtr st_mStrIO;
+        INT8U uch_mAlarmFlag;
+        //INT8U uch_mRunState;
+        BOOL b_mRunState;
+        BOOL b_mErrState;
+        BOOL b_mRdyState;
+
+
+
+};
+
+
+#ifdef __cplusplus
+}
+#endif
+#endif
+
+
+
+
+
+
+

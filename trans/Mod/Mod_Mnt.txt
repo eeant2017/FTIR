@@ -1,0 +1,1232 @@
+//==================================================================================================
+//| 文件名称 | Mod_Mnt.cpp
+//|--------- |--------------------------------------------------------------------------------------
+//| 文件描述 | 监控模块
+//|--------- |--------------------------------------------------------------------------------------
+//| 版权声明 | Copyright2011, 聚光科技(FPI)
+//|----------|--------------------------------------------------------------------------------------
+//|  版本    |  时间       |  作者     | 描述
+//|--------- |-------------|-----------|------------------------------------------------------------
+//|  V1.1    | 2010.09.06  |lxlll      | 规范化
+//==================================================================================================
+#include "Mod_Mnt.h"
+
+#include "Pub_Fun.h"
+#include "Pub_Alarm.h"
+//#include "Pub_TQeque.cpp"
+#include "App_App.h"
+#include "Pro_Api.h"
+#include "Mod_Method.h"
+#include "Mod_Xml.h"
+#include "Pro_FPGA.h"
+#include "debug.h"
+
+#include "Mod_Env.h"
+
+#include "Mod_SelfTest.h"
+#include "Mod_IOCtr.h"
+#include "Pro_FPGA.h"
+
+//==================================================================================================
+//| 函数名称 | process
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | 监控处理
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | 无
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | void
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | lxlll 2011.04.11
+//==================================================================================================
+void CMnt::Process()
+{
+
+        return ;
+}
+
+//==================================================================================================
+//| 函数名称 | process
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | 采集监控量
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | 无
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | void
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | lxlll 2011.04.11
+//==================================================================================================
+void CMnt::SampMntPara()
+{
+        INT16U uin_Data = 0,uin_DataSecond = 0,uin_DataThird = 0;
+        QEvent m;
+        FP32 f_Temp = 0;
+        static INT8U uch_BufNum = 0;
+
+
+
+
+        //-------------监测和报警--------------。
+
+
+        //真空异常报警
+        if(g_strEnvMnt.strPumpSpeed.f_RealVal > 950)
+        {
+                if( (st_mMntPara.st_VacuValue2.f_RealVal > 0.009)   //分析腔室真空度条件
+                        || (st_mMntPara.st_VacuValue3.f_RealVal > 0.09)  //碰撞池真空度条件
+                        )
+                {
+                        ProtectOfStandby();
+                        PushAlarmCode(ERR_VACUUM);
+                }
+                else
+                {
+                        DelAlarmCode(ERR_VACUUM);
+                }
+
+        }
+        else
+        {
+                DelAlarmCode(ERR_VACUUM);
+        }
+
+
+
+
+        //主板与pc通讯异常
+        if(uch_PCCommCnt > 20*60*3)
+        {
+                PushAlarmCode(ERR_PCCOMM);
+        }
+        else
+        {
+                uch_PCCommCnt++;
+                DelAlarmCode(ERR_PCCOMM);
+        }
+
+
+
+
+
+
+
+        //INT32U ul_offsetx =GET_OFFSET(st_SampleConeV);
+
+        //INT32U ul_offsety = &( (STRMntPtr *) 0)->st_SampleConeV - &( (STRMntPtr *)0 )->st_CapillaryV;
+
+        OperateRunFlag(AD_AD7689_CS1_1_syn);
+
+        Sleep(2);
+
+        //ADCOperate(AD7689_1,1,&f_Temp);//样品锥电压-->采样锥电压==采样锥电压
+        ReadAD(AD_AD7689_CS1_1_addr, &f_Temp, AD_AD7689_CS1_1_syn);
+        //------滑动平均 ---
+
+        //st_mMntPara.st_SampleConeV.f_RealVal = MovingAverage(st_mMntPara.st_SampleConeV,(f_Temp * 2 - 2.5) * 203 /3.0);
+        //2017.12.05 新PCB透镜电压调整
+
+        st_mMntPara.st_SampleConeV.f_RealVal = MovingAverage(st_mMntPara.st_SampleConeV,(f_Temp * 2 - 2.5) * 503/3);
+
+        //萃取锥电压 == 萃取锥电压
+        ReadAD(AD_AD7689_CS1_2_addr, &f_Temp, AD_AD7689_CS1_2_syn);
+        //------滑动平均 ---
+        //st_mMntPara.st_ExtractorV.f_RealVal = MovingAverage(st_mMntPara.st_ExtractorV,(f_Temp * 2 - 2.5) * 203 /3.0);
+        //2017.12.05 新PCB透镜电压调整
+        st_mMntPara.st_ExtractorV.f_RealVal = MovingAverage(st_mMntPara.st_ExtractorV,(f_Temp * 2 - 2.5) * 51);
+
+        //rf lens传输杆电压-->传输杆电压（RFLEN 实际上没有用到）
+        ReadAD(AD_AD7689_CS1_3_addr, &f_Temp, AD_AD7689_CS1_3_syn);
+        //st_mMntPara.st_RfLenV.f_RealVal = MovingAverage(st_mMntPara.st_RfLenV,(f_Temp * 2 - 2.5) * 6.0);
+        //2017.12.05 新PCB透镜电压调整
+        st_mMntPara.st_RfLenV.f_RealVal = MovingAverage(st_mMntPara.st_RfLenV,(f_Temp * 2 - 2.5) * 13 / 3);
+
+
+
+        //ADCOperate(AD7689_1,4,&f_Temp);//enternCID入口--->碰撞室入口电压 == 碰撞室入口电压
+        ReadAD(AD_AD7689_CS1_4_addr, &f_Temp, AD_AD7689_CS1_4_syn);
+        //st_mMntPara.st_CIDEntranceV.f_RealVal = MovingAverage(st_mMntPara.st_CIDEntranceV,( f_Temp * 2 - 2.5) * 203 /3.0);
+        //2017.12.05 新PCB透镜电压调整
+        st_mMntPara.st_CIDEntranceV.f_RealVal = MovingAverage(st_mMntPara.st_CIDEntranceV,( f_Temp * 2 - 2.5) * 51);
+
+        //ADCOperate(AD7689_1,5,&f_Temp);//em倍增器电压---->毛细管电流（CORO_I_MON）
+        ReadAD(AD_AD7689_CS1_5_addr, &f_Temp, AD_AD7689_CS1_5_syn);
+        //st_mMntPara.st_EmHighV.f_RealVal = f_Temp * 2 * 323;
+        //st_mMntPara.st_EmHighV.f_RealVal = f_Temp * 4.03 * 1000;
+        //st_mMntPara.st_EmHighV.f_RealVal = (21*f_Temp - 25)*2300/7.12;
+        //st_mMntPara.st_CapillaryI.f_RealVal = f_Temp/0.0248;//毛细管电流uA
+        st_mMntPara.st_CapillaryI.f_RealVal = MovingAverage(st_mMntPara.st_CapillaryI,f_Temp/0.0248);
+
+        //ADCOperate(AD7689_1,6,&f_Temp);//打拿极电压->检测器倍增电压
+        ReadAD(AD_AD7689_CS1_6_addr, &f_Temp, AD_AD7689_CS1_6_syn);
+
+        //lz2015.12.28 倍增器电压
+        //if (cl_Xml.m_XmlCoonfig.bUseSpellMan == 1)
+        //{
+        //	//st_mMntPara.st_Dora.f_RealVal = ((f_Temp -1.879) * 3 * 13.3 / 3.3 * 1000 - 42.28) / 0.232;
+        //	//st_mMntPara.st_Dora.f_RealVal = (f_Temp*13 - 12.5)*1000;
+        //	//st_mMntPara.st_Dora.f_RealVal = f_Temp * 13.3 / 3.3 * 1000 * 3.26;
+        //	f_Temp = f_Temp * 13.3 * 1000 / 3.3 ;
+        //}
+        //else
+        //{
+                f_Temp = f_Temp * 23.3 * 800 / 3.3 ;//lz2015.10.21
+        //}
+
+        st_mMntPara.st_EmHighV.f_RealVal = MovingAverage(st_mMntPara.st_EmHighV,f_Temp);
+
+        //ADCOperate(AD7689_1,7,&f_Temp);//倍增器入口电压kv-->检测器入口电压
+        ReadAD(AD_AD7689_CS1_7_addr, &f_Temp, AD_AD7689_CS1_7_syn);
+        //lz2015.12.28 倍增器入口电压kv
+        //if (cl_Xml.m_XmlCoonfig.bUseSpellMan == 1)
+        //{
+        //	//st_mMntPara.st_EmHighEntranceV.f_RealVal = f_Temp * 13.3 / 3.3  / 0.576 * 1000;
+        //	f_Temp = f_Temp * 13.3  * 1000 / 3.3 ;
+        //	//st_mMntPara.st_CapillaryV.f_RealVal = f_Temp*13000/3;
+        //	////st_mMntPara.st_CapillaryV.f_RealVal = f_Temp*13*1600/3;//made in china
+        //}
+        //else
+        //{
+                f_Temp = f_Temp * 23.3 * 800 / 3.3 ;//lz 2015.10.21
+        /*}*/
+        st_mMntPara.st_EmHighEntranceV.f_RealVal = MovingAverage(st_mMntPara.st_EmHighEntranceV,f_Temp);
+
+        //ADCOperate(AD7689_1,8,&f_Temp);//毛细管电压kv//电晕针电流uA
+        ReadAD(AD_AD7689_CS1_8_addr, &f_Temp, AD_AD7689_CS1_8_syn);
+        //if (cl_Xml.m_XmlCoonfig.bUseSpellMan == 1)
+        //{
+        //	//st_mMntPara.st_CapillaryV.f_RealVal = f_Temp * 13.3 * 1000 / 3.3 ;
+        //	//st_mMntPara.st_Coro.f_RealVal = f_Temp * 133 / 3.3 / 0.576;
+        //	//st_mMntPara.st_CoroI.f_RealVal = f_Temp * 13.3 * 1000 /  3.3 ;
+        //	//st_mMntPara.st_Coro.f_RealVal = f_Temp*13000/3;
+
+        //	st_mMntPara.st_CapillaryV.f_RealVal = MovingAverage(st_mMntPara.st_CapillaryV,f_Temp * 13.3 * 1000 / 3.3);
+        //	st_mMntPara.st_CoroI.f_RealVal = MovingAverage(st_mMntPara.st_CoroI, f_Temp * 13.3 * 1000 /  3.3);
+        //}
+        //else
+        //{
+                //st_mMntPara.st_CapillaryV.f_RealVal = f_Temp * 23.3 * 800 / 3.3 ;//kv
+                //st_mMntPara.st_CoroI.f_RealVal = f_Temp * 13.3 * 10 / 3.3 ;//the unit is uA
+                st_mMntPara.st_CapillaryV.f_RealVal = MovingAverage(st_mMntPara.st_CapillaryV,f_Temp * 23.3 * 800 / 3.3);
+                st_mMntPara.st_CoroI.f_RealVal = MovingAverage(st_mMntPara.st_CoroI,f_Temp * 13.3 * 10 / 3.3);
+        //}
+
+
+        Sleep(2);
+
+
+        //ADCOperate(AD7689_2,1,&f_Temp);//CID碰撞能量--->碰撞室碰撞能量 == 碰撞室碰撞能量
+        ReadAD(AD_AD7689_CS2_1_addr, &f_Temp, AD_AD7689_CS2_1_syn);
+
+        //st_mMntPara.st_CIDV.f_RealVal = MovingAverage(st_mMntPara.st_CIDV,(f_Temp * 2 - 2.5 ) *203 /3.0);
+        st_mMntPara.st_CIDV.f_RealVal = MovingAverage(st_mMntPara.st_CIDV,(f_Temp * 2 - 2.5 ) * 51);
+
+        /*ADCOperate(AD7689_2,2,&f_Temp);*///CID出口电压--->碰撞池出口电压 == 碰撞池出口电压
+        ReadAD(AD_AD7689_CS2_2_addr, &f_Temp, AD_AD7689_CS2_2_syn);
+
+        //st_mMntPara.st_CIDEixtV.f_RealVal = MovingAverage(st_mMntPara.st_CIDEixtV,(f_Temp * 2 - 2.5 ) *203 /3.0);
+        //2017.12.05 新PCB透镜电压调整
+        st_mMntPara.st_CIDEixtV.f_RealVal = MovingAverage(st_mMntPara.st_CIDEixtV,(f_Temp * 2 - 2.5 ) *51);
+
+
+        //ADCOperate(AD7689_2,3,&f_Temp);//MS1_RF电压
+        ReadAD(AD_AD7689_CS2_3_addr, &f_Temp, AD_AD7689_CS2_3_syn);
+        //st_mMntPara.st_Ms1RF.f_RealVal = f_Temp * 3;
+        st_mMntPara.st_Ms1RF.f_RealVal = MovingAverage(st_mMntPara.st_Ms1RF,f_Temp * 3);
+        //st_mMntPara.st_Ms1RF.f_RealVal = f_Temp*3;
+
+        /*ADCOperate(AD7689_2,4,&f_Temp);*///MS2_RF电压
+        ReadAD(AD_AD7689_CS2_4_addr, &f_Temp, AD_AD7689_CS2_4_syn);
+        //st_mMntPara.st_Ms2RF.f_RealVal = f_Temp * 3;
+        st_mMntPara.st_Ms2RF.f_RealVal = MovingAverage(st_mMntPara.st_Ms2RF,f_Temp * 3);
+        //st_mMntPara.st_Ms2RF.f_RealVal = f_Temp*3;
+
+        //MS1_DCN电压,lz15.07.15
+        ReadAD(AD_AD7689_CS2_5_addr, &f_Temp, AD_AD7689_CS2_5_syn);
+        //st_mMntPara.st_Ms1DCN.f_RealVal = 611 * (f_Temp -1.87);
+        //st_mMntPara.st_Ms1DCN.f_RealVal = 608.53 * (f_Temp -1.88); // 2015-11-3 LZ modify to improve voltage accuracy
+        st_mMntPara.st_Ms1DCN.f_RealVal = MovingAverage(st_mMntPara.st_Ms1DCN,608.53 * (f_Temp -1.88));
+        //st_mMntPara.st_Ms1DCP.f_RealVal = f_Temp*2*33220/220;
+
+        //MS1_DCP电压,lz15.07.15
+        ReadAD(AD_AD7689_CS2_6_addr, &f_Temp, AD_AD7689_CS2_6_syn);
+        //st_mMntPara.st_Ms1DCP.f_RealVal = 608.53 * (f_Temp -1.88); // 2015-11-3 LZ modify to improve voltage accuracy
+        st_mMntPara.st_Ms1DCP.f_RealVal = MovingAverage(st_mMntPara.st_Ms1DCP, 608.53 * (f_Temp -1.88));
+        //st_mMntPara.st_Ms1DCN.f_RealVal = f_Temp*2*33220/220;
+
+        //MS2_DCN电压,lz15.07.15
+        ReadAD(AD_AD7689_CS2_7_addr, &f_Temp, AD_AD7689_CS2_7_syn);
+        //st_mMntPara.st_Ms2DCN.f_RealVal = 608.53 * (f_Temp -1.88); // 2015-11-3 LZ modify to improve voltage accuracy
+        st_mMntPara.st_Ms2DCN.f_RealVal = MovingAverage(st_mMntPara.st_Ms2DCN,608.53 * (f_Temp -1.88));
+        //st_mMntPara.st_Ms2DCP.f_RealVal = f_Temp*2*33220/220;
+
+        //MS2_DCP电压,lz15.07.15
+        ReadAD(AD_AD7689_CS2_8_addr, &f_Temp, AD_AD7689_CS2_8_syn);
+        //st_mMntPara.st_Ms2DCP.f_RealVal = 608.53 * (f_Temp -1.88); // 2015-11-3 LZ modify to improve voltage accuracy
+        st_mMntPara.st_Ms2DCP.f_RealVal = MovingAverage(st_mMntPara.st_Ms2DCP,608.53 * (f_Temp -1.88));
+        //st_mMntPara.st_Ms2DCN.f_RealVal = f_Temp*2*33220/220;
+
+
+        //Mars1 离子能量从MS1_DCP电压直接取值,lz15.07.15
+        st_mMntPara.st_Ms1IonEnergy.f_RealVal = st_mMntPara.st_Ms1DCP.f_RealVal;
+        //Mars2 离子能量从MS2_DCP电压直接取值,lz15.07.15
+        st_mMntPara.st_Ms2IonEnergy.f_RealVal = st_mMntPara.st_Ms2DCP.f_RealVal;
+
+        Sleep(2);
+
+        ReadAD(AD_AD7689_CS3_1_addr, &f_Temp, AD_AD7689_CS3_1_syn);
+        //st_mMntPara.ESourcePositive5VDigital.f_RealVal = f_Temp * 2;
+        st_mMntPara.ESourcePositive5VDigital.f_RealVal = MovingAverage(st_mMntPara.ESourcePositive5VDigital,f_Temp * 2);
+        if ((st_mMntPara.ESourcePositive5VDigital.f_RealVal < st_mMntPara.ESourcePositive5VDigital.f_MinVal)
+                ||(st_mMntPara.ESourcePositive5VDigital.f_RealVal > st_mMntPara.ESourcePositive5VDigital.f_MaxVal))
+        {
+                //主板电源+5VD 异常
+                PushAlarmCode(st_mMntPara.ESourcePositive5VDigital.uch_FaultCode);
+        }
+        else
+        {
+                DelAlarmCode(st_mMntPara.ESourcePositive5VDigital.uch_FaultCode);
+        }
+        ReadAD(AD_AD7689_CS3_2_addr, &f_Temp, AD_AD7689_CS3_2_syn);
+        //st_mMntPara.ESourcePositive1Point2VDigital.f_RealVal = f_Temp;
+        st_mMntPara.ESourcePositive1Point2VDigital.f_RealVal = MovingAverage(st_mMntPara.ESourcePositive1Point2VDigital,f_Temp);
+        if ((st_mMntPara.ESourcePositive1Point2VDigital.f_RealVal < st_mMntPara.ESourcePositive1Point2VDigital.f_MinVal)
+                ||(st_mMntPara.ESourcePositive1Point2VDigital.f_RealVal > st_mMntPara.ESourcePositive1Point2VDigital.f_MaxVal))
+        {
+                //主板电源+1.2vd 异常
+                PushAlarmCode(st_mMntPara.ESourcePositive1Point2VDigital.uch_FaultCode);
+        }
+        else
+        {
+                DelAlarmCode(st_mMntPara.ESourcePositive1Point2VDigital.uch_FaultCode);
+        }
+        ReadAD(AD_AD7689_CS3_3_addr, &f_Temp, AD_AD7689_CS3_3_syn);
+        //st_mMntPara.ESourcePositive3Point3VDigital.f_RealVal = f_Temp * 2;
+        st_mMntPara.ESourcePositive3Point3VDigital.f_RealVal = MovingAverage(st_mMntPara.ESourcePositive3Point3VDigital,f_Temp * 2);
+        if ((st_mMntPara.ESourcePositive3Point3VDigital.f_RealVal < st_mMntPara.ESourcePositive3Point3VDigital.f_MinVal)
+                ||(st_mMntPara.ESourcePositive3Point3VDigital.f_RealVal > st_mMntPara.ESourcePositive3Point3VDigital.f_MaxVal))
+        {
+                //主板电源+3.3VD异常
+                PushAlarmCode(st_mMntPara.ESourcePositive3Point3VDigital.uch_FaultCode);
+        }
+        else
+        {
+                DelAlarmCode(st_mMntPara.ESourcePositive3Point3VDigital.uch_FaultCode);
+        }
+        ReadAD(AD_AD7689_CS3_4_addr, &f_Temp, AD_AD7689_CS3_4_syn);
+        //st_mMntPara.ESourceNegative5VAnalog.f_RealVal = -1 * f_Temp * 3;
+        st_mMntPara.ESourceNegative5VAnalog.f_RealVal = MovingAverage(st_mMntPara.ESourceNegative5VAnalog,-1 * f_Temp * 3);
+        if ((st_mMntPara.ESourceNegative5VAnalog.f_RealVal < st_mMntPara.ESourceNegative5VAnalog.f_MinVal)
+                ||(st_mMntPara.ESourceNegative5VAnalog.f_RealVal > st_mMntPara.ESourceNegative5VAnalog.f_MaxVal))
+        {
+                //主板电源-5VA 异常
+                PushAlarmCode(st_mMntPara.ESourceNegative5VAnalog.uch_FaultCode);
+        }
+        else
+        {
+                DelAlarmCode(st_mMntPara.ESourceNegative5VAnalog.uch_FaultCode);
+        }
+        ReadAD(AD_AD7689_CS3_5_addr, &f_Temp, AD_AD7689_CS3_5_syn);
+        //st_mMntPara.ESourcePositive5VAnalog.f_RealVal = f_Temp * 3;
+        st_mMntPara.ESourcePositive5VAnalog.f_RealVal = MovingAverage(st_mMntPara.ESourcePositive5VAnalog,f_Temp * 3);
+        if ((st_mMntPara.ESourcePositive5VAnalog.f_RealVal < st_mMntPara.ESourcePositive5VAnalog.f_MinVal)
+                ||(st_mMntPara.ESourcePositive5VAnalog.f_RealVal > st_mMntPara.ESourcePositive5VAnalog.f_MaxVal))
+        {
+                //主板电源+5VA异常
+                PushAlarmCode(st_mMntPara.ESourcePositive5VAnalog.uch_FaultCode);
+        }
+        else
+        {
+                DelAlarmCode(st_mMntPara.ESourcePositive5VAnalog.uch_FaultCode);
+        }
+        ReadAD(AD_AD7689_CS3_6_addr, &f_Temp, AD_AD7689_CS3_6_syn);
+        //st_mMntPara.ESourceNegative14VAnalog.f_RealVal = -1 * f_Temp * 10;
+        st_mMntPara.ESourceNegative14VAnalog.f_RealVal = MovingAverage(st_mMntPara.ESourceNegative14VAnalog, -1 * f_Temp * 10);
+        //st_mMntPara.ESourceNegative14VAnalog.f_RealVal = -1 * f_Temp * 11;
+        if ((st_mMntPara.ESourceNegative14VAnalog.f_RealVal < st_mMntPara.ESourceNegative14VAnalog.f_MinVal)
+                ||(st_mMntPara.ESourceNegative14VAnalog.f_RealVal > st_mMntPara.ESourceNegative14VAnalog.f_MaxVal))
+        {
+                //主板电源-14VA 异常
+                PushAlarmCode(st_mMntPara.ESourceNegative14VAnalog.uch_FaultCode);
+        }
+        else
+        {
+                DelAlarmCode(st_mMntPara.ESourceNegative14VAnalog.uch_FaultCode);
+        }
+        ReadAD(AD_AD7689_CS3_7_addr, &f_Temp, AD_AD7689_CS3_7_syn);
+        //st_mMntPara.ESourcePositive14VAnalog.f_RealVal = f_Temp * 10;
+        //st_mMntPara.ESourcePositive14VAnalog.f_RealVal = f_Temp * 11;
+        st_mMntPara.ESourcePositive14VAnalog.f_RealVal = MovingAverage(st_mMntPara.ESourcePositive14VAnalog,f_Temp * 11);
+        if ((st_mMntPara.ESourcePositive14VAnalog.f_RealVal < st_mMntPara.ESourcePositive14VAnalog.f_MinVal)
+                ||(st_mMntPara.ESourcePositive14VAnalog.f_RealVal > st_mMntPara.ESourcePositive14VAnalog.f_MaxVal))
+        {
+                //主板电源 +14VA 异常
+                PushAlarmCode(st_mMntPara.ESourcePositive14VAnalog.uch_FaultCode);
+        }
+        else
+        {
+                DelAlarmCode(st_mMntPara.ESourcePositive14VAnalog.uch_FaultCode);
+        }
+        ReadAD(AD_AD7689_CS3_8_addr, &f_Temp, AD_AD7689_CS3_8_syn);
+        //st_mMntPara.ESourcePositive3Point3VAnalog.f_RealVal = f_Temp * 2;
+        st_mMntPara.ESourcePositive3Point3VAnalog.f_RealVal = MovingAverage(st_mMntPara.ESourcePositive3Point3VAnalog,f_Temp * 2);
+        //if ((st_mMntPara.ESourcePositive3Point3VAnalog.f_RealVal < st_mMntPara.ESourcePositive3Point3VAnalog.f_MinVal)
+        //	||(st_mMntPara.ESourcePositive3Point3VAnalog.f_RealVal > st_mMntPara.ESourcePositive3Point3VAnalog.f_MaxVal))
+        //{
+        //	PushAlarmCode(st_mMntPara.ESourcePositive3Point3VAnalog.uch_FaultCode);
+        //}
+        //else
+        //{
+        //	DelAlarmCode(st_mMntPara.ESourcePositive3Point3VAnalog.uch_FaultCode);
+        //}
+
+
+
+        Sleep(2);
+
+
+
+        ReadAD(AD_AD7689_CS4_1_addr, &f_Temp, AD_AD7689_CS4_1_syn);//--->参考电压2.5v //here dft
+        //st_mMntPara.Reference2Point5VOne.f_RealVal = f_Temp * 2;
+        st_mMntPara.Reference2Point5VOne.f_RealVal = MovingAverage(st_mMntPara.Reference2Point5VOne,f_Temp * 2);
+        if ((st_mMntPara.Reference2Point5VOne.f_RealVal < st_mMntPara.Reference2Point5VOne.f_MinVal)
+                ||(st_mMntPara.Reference2Point5VOne.f_RealVal > st_mMntPara.Reference2Point5VOne.f_MaxVal))
+        {
+                //主板参考电压1， 2.5V 异常
+                PushAlarmCode(st_mMntPara.Reference2Point5VOne.uch_FaultCode);
+        }
+        else
+        {
+                DelAlarmCode(st_mMntPara.Reference2Point5VOne.uch_FaultCode);
+        }
+        ReadAD(AD_AD7689_CS4_2_addr, &f_Temp, AD_AD7689_CS4_2_syn);//--->保留== RF1_CUR_MON
+        //st_mMntPara.st_Rf1Current.f_RealVal = f_Temp * 10.0 / 3.0 ;
+        st_mMntPara.st_Rf1Current.f_RealVal = MovingAverage(st_mMntPara.st_Rf1Current,f_Temp * 10.0 / 3.0 );
+
+        ReadAD(AD_AD7689_CS4_3_addr, &f_Temp, AD_AD7689_CS4_3_syn);//--->参考电压1.25V== 主板温度(temp)(去掉1.25v参考电压的报警码)
+        //f_Temp = 10 * f_Temp / (2.5 - f_Temp);
+        //st_mMntPara.st_Temperta.f_RealVal = CalOnTemp(f_Temp);
+        st_mMntPara.st_Temperta.f_RealVal = MovingAverage(st_mMntPara.st_Temperta, CalOnTemp(f_Temp));
+        if ((st_mMntPara.st_Temperta.f_RealVal < st_mMntPara.st_Temperta.f_MinVal)
+                ||(st_mMntPara.st_Temperta.f_RealVal > st_mMntPara.st_Temperta.f_MaxVal))
+        {
+                //主板温度异常
+                PushAlarmCode(st_mMntPara.st_Temperta.uch_FaultCode);
+        }
+        else
+        {
+                DelAlarmCode(st_mMntPara.st_Temperta.uch_FaultCode);
+        }
+        ReadAD(AD_AD7689_CS4_4_addr, &f_Temp, AD_AD7689_CS4_4_syn);//--->RF源电压 == RF源电压 公式不变
+        //st_mMntPara.RFPowerESourceVoltage.f_RealVal = f_Temp * 24;
+        st_mMntPara.RFPowerESourceVoltage.f_RealVal = MovingAverage(st_mMntPara.RFPowerESourceVoltage, f_Temp * 24);
+        if ((st_mMntPara.RFPowerESourceVoltage.f_RealVal < st_mMntPara.RFPowerESourceVoltage.f_MinVal)
+                ||(st_mMntPara.RFPowerESourceVoltage.f_RealVal > st_mMntPara.RFPowerESourceVoltage.f_MaxVal))
+        {
+                //RF供电电源电压异常
+                PushAlarmCode(st_mMntPara.RFPowerESourceVoltage.uch_FaultCode);
+        }
+        else
+        {
+                DelAlarmCode(st_mMntPara.RFPowerESourceVoltage.uch_FaultCode);
+        }
+        ReadAD(AD_AD7689_CS4_5_addr, &f_Temp, AD_AD7689_CS4_5_syn);//--->主板温度 ---> RF2电流监控
+        //st_mMntPara.st_Rf2Current.f_RealVal = f_Temp  *10.0 /3.0 ;
+        st_mMntPara.st_Rf2Current.f_RealVal = MovingAverage(st_mMntPara.st_Rf2Current,f_Temp  *10.0 /3.0);
+
+        ReadAD(AD_AD7689_CS4_6_addr, &f_Temp, AD_AD7689_CS4_6_syn);///--->信号版温度 == 保留
+        ReadAD(AD_AD7689_CS4_7_addr, &f_Temp, AD_AD7689_CS4_7_syn);//--->ESI源电压
+        ReadAD(AD_AD7689_CS4_8_addr, &f_Temp, AD_AD7689_CS4_8_syn);//--->2.5v参考电压
+        //st_mMntPara.Reference2Point5VTwo.f_RealVal = f_Temp * 2;
+        st_mMntPara.Reference2Point5VTwo.f_RealVal = MovingAverage(st_mMntPara.Reference2Point5VTwo,f_Temp * 2);
+        if ((st_mMntPara.Reference2Point5VTwo.f_RealVal < st_mMntPara.Reference2Point5VTwo.f_MinVal)
+                ||(st_mMntPara.Reference2Point5VTwo.f_RealVal > st_mMntPara.Reference2Point5VTwo.f_MaxVal))
+        {
+                //主板参考电压2， 2.5V 异常
+                PushAlarmCode(st_mMntPara.Reference2Point5VTwo.uch_FaultCode);
+        }
+        else
+        {
+                DelAlarmCode(st_mMntPara.Reference2Point5VTwo.uch_FaultCode);
+        }
+
+
+
+        Sleep(2);
+
+
+
+        ReadAD(AD_AD7689_CS5_1_addr, &f_Temp, AD_AD7689_CS5_1_syn);//--->MS2预杆电压 == MS2预杆电压
+
+        //st_mMntPara.st_Ms2PreV.f_RealVal = MovingAverage(st_mMntPara.st_Ms2PreV,(f_Temp * 2 - 2.5 ) * 203 / 3);
+        st_mMntPara.st_Ms2PreV.f_RealVal = MovingAverage(st_mMntPara.st_Ms2PreV,(f_Temp * 2 - 2.5 ) * 51);
+
+        ReadAD(AD_AD7689_CS5_2_addr, &f_Temp, AD_AD7689_CS5_2_syn);//HV倍增器偏转电压--->检测器偏转电压 == 检测器偏转电压
+
+        //st_mMntPara.st_EmHighOffsetV.f_RealVal = MovingAverage(st_mMntPara.st_EmHighOffsetV,(f_Temp * 2 - 2.5) * 331);
+        st_mMntPara.st_EmHighOffsetV.f_RealVal = MovingAverage(st_mMntPara.st_EmHighOffsetV,(f_Temp * 2 - 2.5) * 503/3);
+
+        ReadAD(AD_AD7689_CS5_3_addr, &f_Temp, AD_AD7689_CS5_3_syn);//HV1(出口透镜)--->传输杆出口透镜 == 传输杆出口透镜
+        //st_mMntPara.st_HV1.f_RealVal = (f_Temp *2 -2.5) / 3 *203;
+        //st_mMntPara.st_HV1.f_RealVal = MovingAverage(st_mMntPara.st_HV1,(f_Temp *2 -2.5) / 3 *203);
+        st_mMntPara.st_HV1.f_RealVal = MovingAverage(st_mMntPara.st_HV1,(f_Temp *2 -2.5)* 13/3);
+
+        ReadAD(AD_AD7689_CS5_4_addr, &f_Temp, AD_AD7689_CS5_4_syn);//HV2--->（？？？？）
+        //st_mMntPara.st_HV2.f_RealVal =  (f_Temp - 1.25) * 200;
+        f_Temp = (f_Temp - 1.25) * 200;
+        f_Temp = 0.001*f_Temp*f_Temp + 1.038*f_Temp-0.851;
+        //st_mMntPara.st_HV2.f_RealVal = f_Temp;//agan150325 5#
+        st_mMntPara.st_HV2.f_RealVal = MovingAverage(st_mMntPara.st_HV2,f_Temp);
+        ReadAD(AD_AD7689_CS5_5_addr, &f_Temp, AD_AD7689_CS5_5_syn);//--->高真空归
+        f_Temp = f_Temp * 4;
+
+        //100kou 的高真空规---------
+        //PRT225LEYBOLD
+        //st_mMntPara.st_VacuValue2.f_RealVal = MovingAverage(st_mMntPara.st_VacuValue2,pow(10.0, (f_Temp - 12.66) / 1.33));
+
+        //PTR90NLEYBOLD   分析腔室
+        st_mMntPara.st_VacuValue2.f_RealVal = MovingAverage(st_mMntPara.st_VacuValue2,pow(10.0, (f_Temp - 6.8) / 0.6)/1.33); //单位为Torr
+
+        //27kou 的普通真空规  传输杆腔室
+        st_mMntPara.st_VacuValue1.f_RealVal = MovingAverage(st_mMntPara.st_VacuValue2,pow(10.0, (f_Temp - 6.143) /1.286));
+
+        ReadAD(AD_AD7689_CS5_6_addr, &f_Temp, AD_AD7689_CS5_6_syn);//---->驱动板1温度????==MS1预感电压
+        //st_mMntPara.st_Ms1PreV.f_RealVal = MovingAverage(st_mMntPara.st_Ms1PreV,(f_Temp *2 -2.5)*6);
+        st_mMntPara.st_Ms1PreV.f_RealVal = MovingAverage(st_mMntPara.st_Ms1PreV,(f_Temp *2-2.5)*51);
+
+        ReadAD(AD_AD7689_CS5_7_addr, &f_Temp, AD_AD7689_CS5_7_syn);//---->驱动板2温度 == 保留
+        ReadAD(AD_AD7689_CS5_8_addr, &f_Temp, AD_AD7689_CS5_8_syn);//--->保留 ==  保留
+
+
+
+        Sleep(2);
+        ReadAD(AD_AD7689_CS6_1_addr, &f_Temp, AD_AD7689_CS1_1_syn);//DC1 改为 Focus
+        //st_mMntPara.st_LenthDC1.f_RealVal = (f_Temp * 2.0 -2.5) * 203 / 3.0 ;
+        st_mMntPara.st_LenthDC1.f_RealVal = MovingAverage(st_mMntPara.st_LenthDC1,(f_Temp *2 -2.5)*503/3);
+        ReadAD(AD_AD7689_CS6_2_addr, &f_Temp, AD_AD7689_CS1_1_syn);//DC2 改为 QJet
+        //st_mMntPara.st_LenthDC2.f_RealVal = (f_Temp * 2.0 -2.5) * 203 / 3.0 ;
+        st_mMntPara.st_LenthDC2.f_RealVal = MovingAverage(st_mMntPara.st_LenthDC2,(f_Temp *2 -2.5)*51);
+        ReadAD(AD_AD7689_CS6_3_addr, &f_Temp, AD_AD7689_CS1_1_syn);//DC3 改为 Q00b
+        //st_mMntPara.st_LenthDC3.f_RealVal = (f_Temp * 2.0 -2.5) * 203 / 3.0 ;
+        st_mMntPara.st_LenthDC3.f_RealVal = MovingAverage(st_mMntPara.st_LenthDC3,(f_Temp *2 -2.5)*13/3);
+        ReadAD(AD_AD7689_CS6_4_addr, &f_Temp, AD_AD7689_CS1_1_syn);//DC4 改为 Q00out
+        //st_mMntPara.st_LenthDC4.f_RealVal = (f_Temp * 2.0 -2.5) * 203 / 3.0 ;
+        st_mMntPara.st_LenthDC4.f_RealVal = MovingAverage(st_mMntPara.st_LenthDC4,(f_Temp *3 -5)*13/3);
+        ReadAD(AD_AD7689_CS6_5_addr, &f_Temp, AD_AD7689_CS1_1_syn);//保留
+        ReadAD(AD_AD7689_CS6_6_addr, &f_Temp, AD_AD7689_CS1_1_syn);// 信号版温度
+        st_mMntPara.st_SignBoardTemperatrue.f_RealVal = CalOnTemp(f_Temp);
+        ReadAD(AD_AD7689_CS6_7_addr, &f_Temp, AD_AD7689_CS1_1_syn);//模拟量检测器信号采集
+        st_mMntPara.st_AnologSignal.f_RealVal = f_Temp;
+
+        ReadAD(AD_AD7689_CS5_7_addr, &f_Temp, AD_AD7689_CS1_1_syn); //挡板电压
+        st_mMntPara.st_BaffleVoltage.f_RealVal = MovingAverage(st_mMntPara.st_BaffleVoltage,(f_Temp * 23.3 * 800 / 3.3));//挡板电压
+
+        ReadAD(AD_AD7689_CS5_8_addr, &f_Temp, AD_AD7689_CS1_1_syn); //挡板电流
+        st_mMntPara.st_BaffleCurrunt.f_RealVal = MovingAverage(st_mMntPara.st_BaffleCurrunt,(f_Temp/0.0248f));
+        ReadAD(AD_AD7689_CS6_5_addr, &f_Temp, AD_AD7689_CS1_1_syn); //Q0out2
+        st_mMntPara.st_Q0out2.f_RealVal= MovingAverage(st_mMntPara.st_Q0out2,(f_Temp *2 -2.5)*13/3);
+        ReadAD(AD_AD7689_CS6_8_addr, &f_Temp, AD_AD7689_CS1_1_syn); //DC7 也就是原理图dc test
+        st_mMntPara.st_DC7.f_RealVal = MovingAverage(st_mMntPara.st_DC7,(f_Temp *2 -2.5)*13/3);
+
+        Sleep(2);
+
+        OperateRunFlag(GATE_ON_FLAG);//refsh the data...
+        MemoryRead(FPGA_REG,GATE_ON_FLAG_ADDR,&uin_Data);
+
+        cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_CoroIO = (uin_Data & 0x0002) >> 1;
+        cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_EMIO = (uin_Data & 0x0004) >> 2;
+        uin_Data = uin_Data & 0x0001;
+        uch_GateOnCur = uin_Data;
+
+
+        if(uch_FirstGateOnSet == 1)
+        {
+                uch_FirstGateOnSet = 0;
+                INT8U uch_Cmd = 0x23;
+                INT8U uch_AddCmd = 0x66;
+                INT8U auch_data[2];
+                auch_data[0] = 0x18; //
+
+
+                if(uch_GateOnCur == 0)
+                {
+                        auch_data[1] = 0x00;
+                }
+                else
+                {
+                        auch_data[1] = 0x11;
+                }
+
+
+                INT16U uch_len = 2;
+                CircuBoardCommSend(uch_Cmd,uch_AddCmd,auch_data,uch_len);
+        }
+
+        //离子源 未安装报警
+        if (uin_Data)
+        {
+                //离子源插上
+                if(uch_GateOnLast == 0 && uch_GateOnCur == 1)
+                {
+                        //离子源拿开后的联动
+                        INT8U uch_Cmd = 0x23;
+                        INT8U uch_AddCmd = 0x66;
+                        INT8U auch_data[2];
+                        auch_data[0] = 0x18; //
+                        auch_data[1] = 0x11;
+                        INT16U uch_len = 2;
+                        CircuBoardCommSend(uch_Cmd,uch_AddCmd,auch_data,uch_len);
+                }
+
+                DelAlarmCode( cl_gApp.cl_puMnt.GetMntPara()->st_GateONErr.uch_FaultCode );
+        }
+        else
+        {
+
+
+                //离子源挪开。
+                if(uch_GateOnLast == 1 && uch_GateOnCur == 0)
+                {
+                        //离子源拿开后的联动
+                        INT8U uch_Cmd = 0x23;
+                        INT8U uch_AddCmd = 0x66;
+                        INT8U auch_data[2];
+                        auch_data[0] = 0x18; //
+                        auch_data[1] = 0x00;
+                        INT16U uch_len = 2;
+                        CircuBoardCommSend(uch_Cmd,uch_AddCmd,auch_data,uch_len);
+
+                        ProtectOfStandby();
+
+                }
+
+
+                PushAlarmCode( cl_gApp.cl_puMnt.GetMntPara()->st_GateONErr.uch_FaultCode );
+        }
+
+        uch_GateOnLast = uch_GateOnCur;
+
+        //add by lee 2016.7.22
+        Sleep(2);
+
+        STRMnt *ptr = new STRMnt;
+
+        memcpy(ptr, &st_mMntPara, sizeof(STRMnt));
+
+        //读取设定电压反馈值
+        UpdateVoltageCheckListRead( ptr, GetTickCount() );
+
+        delete ptr;
+
+        static INT8U uch_RunLedState =0 ;
+
+        //检验设定电压反馈是否与设定一致
+        INT32U ul_LensErr = CheckVoltage();
+        STRCheckVoltageList *pstrCheckVol =  GetCheckVoltageListPtr();
+
+        for(int i=0;i<MAX_VOL_CHANNEL-1;i++)
+        {
+                INT32U ul_ErrBit = ul_LensErr&(0x0001<<i);
+                if(ul_ErrBit == (0x0001<<i))
+                {
+
+                        PushAlarmCode(pstrCheckVol[i].uch_AlarmCode);
+                }
+                else
+                {
+                        DelAlarmCode(pstrCheckVol[i].uch_AlarmCode);
+                }
+
+        }
+
+
+        STREnvMnt  *pstrEnvMnt = GetEnvErr();
+
+        INT8U uch_ErrNum = GetErrNum();
+        INT8U uch_AlarmNum = GetAlarmNum();
+        INT8U uch_CircuAlarmNum = GetCircuAlarmNum();
+
+
+        //ERR LED check
+        if ( uch_ErrNum > 0 ) //有ERROR就闪烁
+        {
+                cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_ErrLed = LED_SHINE;
+        }
+        else if(uch_AlarmNum > 0) //有alarm 就常亮
+        {
+                cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_ErrLed = LED_ON;
+        }
+        else
+        {
+                cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_ErrLed = LED_OFF;
+        }
+
+        //RDY LED check
+
+        if(
+                (cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_PumpIO)  //在非待机状态下
+                && (pstrEnvMnt->strPumpSpeed.f_RealVal >  999) //TODO: 分子泵转速大于配置转速R（999）
+                && (pstrEnvMnt->strPumpCurrent.f_RealVal < 6)//TODO:分子泵电流小于Ipump（6）
+
+                && uch_CircuAlarmNum == 0//环境板没有错误 （气体和温度无错误）
+                && pstrEnvMnt->b_N2Valve == 1 //环境板打开了喷雾器电磁阀开关
+                && uch_ErrNum == 0 //仪器无err
+
+                )
+        {
+
+                cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_RdyLed = LED_ON;//准备好
+        }
+        else if((cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_PumpIO)  //在非待机状态下 满足以下任一条件
+
+                && ((pstrEnvMnt->strPumpSpeed.f_RealVal < 999) //TODO: 分子泵转速小于配置转速R（999）并且大于0
+                        && (pstrEnvMnt->strPumpSpeed.f_RealVal >  0))
+                ||	(pstrEnvMnt->strPumpCurrent.f_RealVal > 6)
+                ||   uch_CircuAlarmNum > 0 //环境板有报警
+                )
+        {
+                cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_RdyLed = LED_SHINE;//正在准备
+        }
+        else
+        {
+                cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_RdyLed = LED_OFF;//仪器未进行准备工作
+        }
+
+
+        //RUN LED check
+        if (
+                ( (st_mMntPara.st_Rf1Current.f_RealVal+st_mMntPara.st_Rf2Current.f_RealVal) > 0.22)
+
+
+                && (st_mMntPara.st_Rf1Current.f_RealVal < 2)
+
+                && (st_mMntPara.st_Rf2Current.f_RealVal < 2)
+
+                )
+        {
+                cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_RunLed = LED_SHINE;
+
+        }
+        else
+        {
+                cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_RunLed = LED_ON;
+        }
+
+
+
+        if( cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_RunLed != uch_RunLedState)
+        {
+
+                if(cl_Xml.m_XmlCoonfig.bPrintfMainVolErr == 1)
+                        printf("Run Led(0 ON, 1 OFF,2 SHINE) %d\r\n", cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_RunLed);
+        }
+
+        uch_RunLedState = cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_RunLed ;
+
+        /*
+
+        //ERR LED check
+        if ( ul_LensErr ) //判断 检测器3个高压，毛细管高压，开了电压再判断。
+        {
+                cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_ErrLed = LED_ON;
+        }
+        else
+        {
+                cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_ErrLed = LED_OFF;
+        }
+
+        //RDY LED check
+
+        if( (( pstrEnvMnt->strPumpSpeed.f_RealVal >= 0 ) && (pstrEnvMnt->strPumpSpeed.f_RealVal <  10)) ||  (pstrEnvMnt->strEnvErrDetect.ush_ErrFlag == 0x80)
+                &&(cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_PumpIO)
+                )
+        {
+                cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_RdyLed = LED_OFF;//没准备
+        }
+        else if(
+                (( pstrEnvMnt->strPumpSpeed.f_RealVal >=749 )	&&
+                ( pstrEnvMnt->strPumpCurrent.f_RealVal < 4 )   &&
+                ( pstrEnvMnt->strEnvErrDetect.ush_ErrFlag == 0 ))
+
+                || (!cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_PumpIO)
+                )
+        {
+                cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_RdyLed = LED_ON;//准备好
+        }
+        else
+        {
+                cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_RdyLed = LED_SHINE;//正在准备
+        }
+
+
+        //RUN LED check
+        if (
+                ( st_mMntPara.st_Rf1Current.f_RealVal+st_mMntPara.st_Rf2Current.f_RealVal > 0.15) && (st_mMntPara.st_Rf1Current.f_RealVal < 2)
+
+                && (st_mMntPara.st_Rf2Current.f_RealVal < 2)
+
+                )
+        {
+                cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_RunLed = LED_SHINE;
+
+        }
+        else
+        {
+                cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_RunLed = LED_OFF;
+        }
+
+
+
+        if( cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_RunLed != uch_RunLedState)
+        {
+
+                if(cl_Xml.m_XmlCoonfig.bPrintfMainVolErr == 1)
+                        printf("Run Led(0 ON, 1 OFF,2 SHINE) %d\r\n", cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_RunLed);
+        }
+
+        uch_RunLedState = cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_RunLed ;
+        */
+
+
+
+        return ;
+}
+
+
+//==================================================================================================
+//| 函数名称 | process
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | 预监控处理
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | 无
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | void
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | lxlll 2011.04.11
+//==================================================================================================
+
+void CMnt::PreProcess()
+{
+        InitSTRMnt();//初始化监控变量
+        //q_mAlarmCode.SetMsgLen(40);
+        return ;
+}
+
+
+//==================================================================================================
+//| 函数名称 | CMnt
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | 构造函数
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | 无
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | void
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | lxlll 2011.04.11
+//==================================================================================================
+CMnt::CMnt()
+{
+        memset(&st_mMntPara,0,sizeof(st_mMntPara));
+        //q_mAlarmCode = NULL;
+        //uch_mAlarmCnt = 0;
+
+        uch_GateOnCur = 1;
+        uch_GateOnLast = 1;
+        uch_FirstGateOnSet = 1;
+
+        uch_AverageNum = 1; //滑动平均默认取32个平均数
+}
+
+//==================================================================================================
+//| 函数名称 | CMnt
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | 构造函数
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | 无
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | void
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | 李壮 2016.10.10
+//==================================================================================================
+void CMnt::InitSTRMnt()
+{
+        //memset(&st_mMntPara,0,sizeof(st_mMntPara));
+
+        //主板电源+5VD异常
+        st_mMntPara.ESourcePositive5VDigital.f_MaxVal = 5.5;
+        st_mMntPara.ESourcePositive5VDigital.f_MinVal = 4.5;
+        st_mMntPara.ESourcePositive5VDigital.uch_FaultCode = 0x81;
+
+        //主板电源+1.2VD
+        st_mMntPara.ESourcePositive1Point2VDigital.f_MaxVal = 1.3;
+        st_mMntPara.ESourcePositive1Point2VDigital.f_MinVal = 1.1;
+        st_mMntPara.ESourcePositive1Point2VDigital.uch_FaultCode = 0x82;
+
+        //主板电源+3.3VD电压
+        st_mMntPara.ESourcePositive3Point3VDigital.f_MaxVal = 3.4;
+        st_mMntPara.ESourcePositive3Point3VDigital.f_MinVal = 3.0;///???
+        st_mMntPara.ESourcePositive3Point3VDigital.uch_FaultCode = 0x83;
+
+        //主板电源-5VA参考电压
+        st_mMntPara.ESourceNegative5VAnalog.f_MaxVal = -4.5;
+        st_mMntPara.ESourceNegative5VAnalog.f_MinVal = -5.5;
+        st_mMntPara.ESourceNegative5VAnalog.uch_FaultCode = 0x84;
+
+        //主板电源+5VA电压
+        st_mMntPara.ESourcePositive5VAnalog.f_MaxVal = 5.5;
+        st_mMntPara.ESourcePositive5VAnalog.f_MinVal = 4.5;
+        st_mMntPara.ESourcePositive5VAnalog.uch_FaultCode = 0x85;
+
+        //主板电源-14VA参考电压
+        st_mMntPara.ESourceNegative14VAnalog.f_MaxVal = -13;
+        st_mMntPara.ESourceNegative14VAnalog.f_MinVal = -15;
+        st_mMntPara.ESourceNegative14VAnalog.uch_FaultCode = 0x86;
+
+        //主板电源+14VA电压
+        st_mMntPara.ESourcePositive14VAnalog.f_MaxVal = 15;
+        st_mMntPara.ESourcePositive14VAnalog.f_MinVal = 13;
+        st_mMntPara.ESourcePositive14VAnalog.uch_FaultCode = 0x87;
+
+        //主板1 2.5V参考电压
+        st_mMntPara.Reference2Point5VOne.f_MaxVal = 2.55;
+        st_mMntPara.Reference2Point5VOne.f_MinVal = 2.45;
+        st_mMntPara.Reference2Point5VOne.uch_FaultCode = 0x88;
+
+        //主板2 2.5V参考电压
+        st_mMntPara.Reference2Point5VTwo.f_MaxVal = 2.55;
+        st_mMntPara.Reference2Point5VTwo.f_MinVal = 2.45;
+        st_mMntPara.Reference2Point5VTwo.uch_FaultCode = 0x89;
+
+        //主板 1.25V参考电压   乾隆说没有
+        //st_mMntPara.Reference1Point25V.f_MaxVal = 1.3;
+        //st_mMntPara.Reference1Point25V.f_MinVal = 1.2;
+        //st_mMntPara.Reference1Point25V.uch_FaultCode = 0x8A;
+
+        //RF供电电源电压异常
+        st_mMntPara.RFPowerESourceVoltage.f_MaxVal = 65;
+        st_mMntPara.RFPowerESourceVoltage.f_MinVal = 55;
+        st_mMntPara.RFPowerESourceVoltage.uch_FaultCode = 0x8B;
+
+        //去掉了
+        //st_mMntPara.ESourcePositive3Point3VAnalog.f_MaxVal = 3.4;
+        //st_mMntPara.ESourcePositive3Point3VAnalog.f_MinVal = 3.2;
+        //st_mMntPara.ESourcePositive3Point3VAnalog.uch_FaultCode = 0x8C;
+
+        //主板温度异常
+        st_mMntPara.st_Temperta.f_MaxVal = 45;
+        st_mMntPara.st_Temperta.f_MinVal = 10;
+        st_mMntPara.st_Temperta.uch_FaultCode = 0x8D;
+
+        //去掉了
+        //st_mMntPara.st_SignBoardTemperatrue.f_MaxVal = 35;
+        //st_mMntPara.st_SignBoardTemperatrue.f_MinVal = 10;
+        //st_mMntPara.st_SignBoardTemperatrue.uch_FaultCode = 0x8E;
+        //
+        //st_mMntPara.st_DriverBoard1Temperatrue.f_MaxVal = 45;
+        //st_mMntPara.st_DriverBoard1Temperatrue.f_MinVal = 10;
+        //st_mMntPara.st_DriverBoard1Temperatrue.uch_FaultCode = 0x8F;
+        //
+        //st_mMntPara.st_DriverBoard2Temperatrue.f_MaxVal = 45;
+        //st_mMntPara.st_DriverBoard2Temperatrue.f_MinVal = 10;
+        //st_mMntPara.st_DriverBoard2Temperatrue.uch_FaultCode = 0x90;
+
+        //真空归通讯异常
+        st_mMntPara.st_VacuCommErr.uch_FaultCode = 0x0D;
+
+        //门控开关打开
+        st_mMntPara.st_GateONErr.uch_FaultCode = 0x91;
+
+        //总线自检失败
+        st_mMntPara.st_GPMCCheckErr.uch_FaultCode = 0x10;
+
+
+
+
+        return;
+}
+
+
+
+//==================================================================================================
+//| 函数名称 | ProtectOfStandby
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | 保护时的待机
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | void
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | void
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | lyb 2019.07.15
+//==================================================================================================
+void CMnt::ProtectOfStandby()
+{
+        STREnvMnt  *pstrEnvMnt = GetEnvErr();
+        if(cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_PumpIO == 1)// || pstrEnvMnt->b_CircuStandbyIO == 1)
+        {
+
+
+                //-------------主板待机-----------------
+                OperateRunFlag(ONE_KEY_ON);
+                cl_gApp.cl_puIOCtr.GetSTRIOObject()->uch_PumpIO = 0;
+                cl_gApp.SetOpration(MS_STOP); //关闭方法扫描
+                //关闭所有电压
+
+                //-------------环境板待机-----------------
+
+                //发送给环境板待机命令
+                INT8U uch_Cmd = 0x23;
+                INT8U uch_AddCmd = 0x66;
+                INT8U auch_data[2];
+                auch_data[0] = 0x0C; //
+                auch_data[1] = 0x00;
+                INT16U uch_len = 2;
+                CircuBoardCommSend(uch_Cmd,uch_AddCmd,auch_data,uch_len);
+        }
+
+}
+
+
+//==================================================================================================
+//| 函数名称 | GetErrNum
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | 获得当前仪器的错误数，主板err+环境板err
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | void
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | INT8U ERR number
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | lyb 2019.07.15
+//==================================================================================================
+INT8U CMnt::GetErrNum()
+{
+        INT8U uch_Cnt = 0;
+        for(int i=0; i<TOTAL_ALARM_NUM; i++)
+        {
+                if(auch_AlarmCode[i] > 0 && auch_AlarmCode[i] < 0X80)
+                {
+                        uch_Cnt++;
+                }
+
+        }
+
+        for(int  i=0; i<10; i++)
+        {
+                if(auch_CircuAlarmCode[i] > 0 && auch_CircuAlarmCode[i] < 0X80)
+                {
+                        uch_Cnt++;
+                }
+
+        }
+
+        return uch_Cnt;
+
+}
+
+
+//==================================================================================================
+//| 函数名称 | GetAlarmNum
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | 获得当前仪器的ALARM数，主板ALARM+环境板ALARM
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | void
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | INT8U ALARM number
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | lyb 2019.07.15
+//==================================================================================================
+INT8U CMnt::GetAlarmNum()
+{
+        INT8U uch_Cnt = 0;
+        for(int i=0; i<TOTAL_ALARM_NUM; i++)
+        {
+                if(auch_AlarmCode[i] >= 0x81 && auch_AlarmCode[i] <= 0xff)
+                {
+                        uch_Cnt++;
+                }
+
+        }
+
+        for(int i=0; i<10; i++)
+        {
+                if(auch_CircuAlarmCode[i] >= 0x81 && auch_CircuAlarmCode[i] <= 0xff)
+                {
+                        uch_Cnt++;
+                }
+
+        }
+
+        return uch_Cnt;
+
+}
+
+
+//==================================================================================================
+//| 函数名称 | GetCircuAlarmNum
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | 获得环境板ALARM数量
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | void
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | INT8U ALARM number
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | lyb 2019.07.15
+//==================================================================================================
+INT8U CMnt::GetCircuAlarmNum()
+{
+        INT8U uch_Cnt = 0;
+
+        for(int i=0; i<10; i++)
+        {
+                if(auch_CircuAlarmCode[i] >= 0x81 && auch_CircuAlarmCode[i] <= 0xff)
+                {
+                        uch_Cnt++;
+                }
+
+        }
+
+        return uch_Cnt;
+
+}
+
+
+//==================================================================================================
+//| 函数名称 | WritePARAtoXml
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | 写入xml
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | 无
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | void
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | 陈飞华 2017.3.23
+//==================================================================================================
+
+void CMnt::WritePARAtoXml()
+{
+        //add by cfh 2016.7.22
+
+        //计数
+        static INT8U uch_CNT = 0;
+        //正离子存储的位置的开始
+        static INT8U uch_temp=0;
+        INT8U uch_vtype;
+        const char *pschFullPath = "/FlashDisk2/lcms/mars7500.xml";
+        char asch_Testbuf[20] = {0};
+        //说明参数已经改变
+        if(cl_Xml.uch_Changepara == 1)
+        {
+
+                if(((uch_CNT >=0)&&(uch_CNT <=0x0e)))
+                {
+                        uch_vtype = uch_CNT+uch_temp;
+
+                }
+                else if(uch_CNT ==0x0f)
+                {
+                        uch_vtype = 0x01f+uch_temp;
+
+                }
+                else if((uch_CNT >=0x10)&&(uch_CNT <=0x015))
+                {
+                        uch_vtype = uch_CNT+uch_temp;
+
+                }
+                else if((uch_CNT >=0x16)&&(uch_CNT <=0x01b))
+                {
+                        uch_vtype = uch_CNT+3+uch_temp;
+
+                }
+
+
+                sprintf(asch_Testbuf, "%04f", cl_Xml.f_Vmax[uch_vtype]);
+                ModifyNodeTextDirect(pschFullPath, g_strxmlparalist[uch_vtype].ash_max,asch_Testbuf);
+                sprintf(asch_Testbuf, "%04f", cl_Xml.f_Vmin[uch_vtype]);
+                ModifyNodeTextDirect(pschFullPath, g_strxmlparalist[uch_vtype].ash_min,asch_Testbuf);
+                sprintf(asch_Testbuf, "%04f", cl_Xml.f_Vdefault[uch_vtype]);
+
+                ModifyNodeTextDirect(pschFullPath, g_strxmlparalist[uch_vtype].ash_default,asch_Testbuf);
+                Sleep(5);
+                sprintf(asch_Testbuf, "%04f", cl_Xml.f_Setkneg[uch_vtype]);
+                ModifyNodeTextDirect(pschFullPath, g_strxmlparalist[uch_vtype].ash_setvk,asch_Testbuf);
+
+                sprintf(asch_Testbuf, "%04f", cl_Xml.f_Setbneg[uch_vtype]);
+                ModifyNodeTextDirect(pschFullPath, g_strxmlparalist[uch_vtype].ash_setvb,asch_Testbuf);
+                Sleep(5);
+                sprintf(asch_Testbuf, "%04f", cl_Xml.f_Reflectkneg[uch_vtype]);
+                ModifyNodeTextDirect(pschFullPath, g_strxmlparalist[uch_vtype].ash_refvk,asch_Testbuf);
+                sprintf(asch_Testbuf, "%04f", cl_Xml.f_Reflectbneg[uch_vtype]);
+                ModifyNodeTextDirect(pschFullPath, g_strxmlparalist[uch_vtype].ash_refvb,asch_Testbuf);
+                if(uch_CNT == 0x1b)
+                {
+                        if(uch_temp == 31)
+                        {
+                                uch_temp = 0;
+                                cl_Xml.uch_Changepara = 0;
+                                uch_CNT = 0;
+
+                        }
+                        else
+                        {
+                                uch_CNT = 0;
+                                uch_temp = 31;
+
+                        }
+
+
+                }
+
+                else
+                {
+                        uch_CNT ++;
+
+                }
+
+
+        }
+        Sleep(5);
+}
+
+//==================================================================================================
+//| 函数名称 | MovingAverage
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | 滑动平均
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | STRMntAttr 输入监测结构体  FP32 当前值
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | FP32 平均后的数
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | lyb 2017.04.28
+//==================================================================================================
+FP32 CMnt::MovingAverage(STRMntAttr &st_Sample,FP32 f_CurrentValue)
+{
+        INT8U i = 0;
+        FP32 f_Sum = 0;
+        INT8U n = 0;
+        n = uch_AverageNum;
+
+        //------滑动平均 ---
+        st_Sample.f_Buf[st_Sample.uch_Index] = f_CurrentValue;//给buf循环赋值
+        f_Sum = 0;
+        for(i=0; i< n; i++)
+        {
+                f_Sum = f_Sum + st_Sample.f_Buf[i];
+        }
+
+        if(n != 0)
+        {
+                if(st_Sample.uch_Index >= n-1)
+                {
+                        st_Sample.uch_Index = 0;
+                }
+                else
+                {
+                        st_Sample.uch_Index ++;
+                }
+        }
+        else
+        {
+                st_Sample.uch_Index = 0;
+        }
+
+        return f_Sum/n;
+}
+
+//no more

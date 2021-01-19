@@ -1,0 +1,55 @@
+//==================================================================================================
+//| 文件名称 | Pub_CCrc16.h
+//|--------- |--------------------------------------------------------------------------------------
+//| 文件描述 | Pub_CCrc16.h所对应的头文件
+//|--------- |--------------------------------------------------------------------------------------
+//| 版权声明 | Copyright2009, 聚光科技(FPI)
+//|----------|--------------------------------------------------------------------------------------
+//|  版本    |  时间       |  作者     | 描述
+//|--------- |-------------|-----------|------------------------------------------------------------
+//|  V1.1    | 2009.10.30  | Gang      | 准备单元测试
+//==================================================================================================
+#ifndef PUB_CTCPCOMMAND_H
+#define PUB_CTCPCOMMAND_H
+
+//--------------------------------------------------------------------------------------------------
+#include "TypeDefine.h"
+#include "Pub_CCommand.h"
+#include "Pub_CQhsm.h"
+#ifdef __cplusplus
+extern "C" {
+#endif
+//--------------------------------------------------------------------------------------------------
+
+
+#define MAX_V_SET_NUMBERS    25
+class CTCPCommand : public CCommand
+{
+public:
+    CTCPCommand(QHsm *pcl_iHsm)
+        {
+                pcl_pvHsm = pcl_iHsm;
+                uch_pvCurrentPackNum = 1;
+
+        };
+
+    ~CTCPCommand();
+
+        INT8S DealCommand(INT8U *puch_iData,INT16U uin_iLen);
+
+private:
+
+        QHsm *pcl_pvHsm;
+        INT8U SetParameter(INT8U *puch_iData);
+        INT8U SetSwitch(INT8U *puch_iData);
+        INT8U SetAverageNum(INT8U *puch_iData);
+        INT8U SetParameterOneTimes(INT8U *puch_iData,INT16U uin_iLen);
+        //INT8U SetParameterByVoltageList(INT8U *puch_iData);
+        INT8U uch_pvCurrentPackNum;
+
+};
+
+#ifdef __cplusplus
+}
+#endif
+#endif /* PUB_CCRC16_H */

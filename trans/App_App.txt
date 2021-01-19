@@ -1,0 +1,493 @@
+//==================================================================================================
+//| 文件名称 | Mod_App.cpp
+//|--------- |--------------------------------------------------------------------------------------
+//| 文件描述 | 系统应用层
+//|--------- |--------------------------------------------------------------------------------------
+//| 版权声明 | Copyright2009, 聚光科技(FPI)
+//|----------|--------------------------------------------------------------------------------------
+//|  版本    |  时间       |  作者     | 描述
+//|--------- |-------------|-----------|------------------------------------------------------------
+//|  V1.1    | 2010.09.06  |lxlll      | 规范化
+//==================================================================================================
+
+
+#include "App_App.h"
+#include "math.h"
+#include "Pub_TQeque.cpp"//是C++模块，所以要包含.cpp文件
+#include "Pub_CCan.h"
+#include "Pub_CTCPSever.h"
+#include "Mod_Method.h"
+#include "Mod_Xml.h"
+#include "Pro_Api.h"
+#include "Pro_FPGA.h"
+#include "Mod_WriteDebugLog.h"
+#include "Mod_Env.h"
+
+
+#pragma comment(lib,".\\lib\\epcIoLib.lib")
+#include  "epcIoLib.h"
+
+int count_test = 0;
+int count_test_old = 0;
+CRITICAL_SECTION CriticalSection_AppRun;//锁
+extern CRITICAL_SECTION CriticalSection_FpgaRdy;//锁
+extern CRITICAL_SECTION CriticalSection_AddLog;//锁
+INT8U auch_OprationBuf[10];
+CQueue m_tqOpration(auch_OprationBuf,sizeof(auch_OprationBuf));;
+
+BOOL CApp::SetOpration(INT8U uch_Op)
+{
+        if(m_tqOpration.PushQueue(uch_Op))
+        {
+                return TRUE;
+        }
+        else
+        {
+                return FALSE;
+        }
+}
+
+BOOL CApp::GetOpration(INT8U* puch_Op)
+{
+        if(m_tqOpration.PopQueue(puch_Op))
+        {
+                return TRUE;
+        }
+        else
+        {
+                return FALSE;
+        }
+}
+
+//==================================================================================================
+//| 函数名称 | process
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | 串口模块处理
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | 无
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | void
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | lxlll 2010.08.18
+//==================================================================================================
+INT32U ul_Test = 0,ul_Test1 = 0;;
+INT8S uch_QTest = 0;
+void CApp::OnTimer(INT8U uch_iID)
+{
+
+        switch(uch_iID)
+        {
+        case IO_CTR_ID:
+                uch_IOSetTimeOut = 1;
+                break;
+        case MNT_TIMER_ID:
+                uch_MntTimeOut = 1;
+
+                break;
+        case PASS_DATA_OVER_ID:
+
+                break;
+        case 3:
+
+                break;
+        case WRITE_PARATOXML:
+                uch_WriteXmlTimeOut = 1;
+                break;
+        default:
+                break;
+        }
+        return;
+
+}
+
+//==================================================================================================
+//| 函数名称 |
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | 构造函数
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | 无
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | void
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | lxlll 2010.09.06
+//==================================================================================================
+CApp::CApp()
+{
+        InitializeCriticalSection(&CriticalSection_AppRun);
+        InitializeCriticalSection(&CriticalSection_AddLog);
+        uch_mEventCnt = 0;
+        st_pvCanSocket = 0;
+        ul_pvIONumber = 0;
+        ul_pvINumber = 0;
+        ul_pvONumber = 0;
+
+        uin_Inter = 0;
+        m_uchMSRunState = 0;
+}
+
+
+//==================================================================================================
+//| 函数名称 | process
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 |
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | 无
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | void
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | lxlll 2010.08.18
+//==================================================================================================
+
+void CApp::Process()
+{
+
+        if(uch_IOSetTimeOut == 1)//定时到了
+        {
+                EnterCriticalSection(&CriticalSection_AppRun);
+                uch_IOSetTimeOut = 0;
+                cl_puIOCtr.Process(); //IO设置处理
+                LeaveCriticalSection(&CriticalSection_AppRun);
+        }
+        if(uch_MntTimeOut == 1)
+        {
+                uch_MntTimeOut = 0;
+                cl_puMnt.SampMntPara();
+        }
+
+        if(uch_WriteXmlTimeOut)
+        {
+                uch_WriteXmlTimeOut = 0;
+                cl_puMnt.WritePARAtoXml();
+        }
+        EnterCriticalSection(&CriticalSection_AppRun);
+        if(GetOpration(&m_uchOpration))
+        {
+
+                if(m_uchOpration == MS_START&&m_uchMSRunState==0)
+                {
+
+
+
+
+                        //开启排气阀
+                        INT8U uch_Cmd = 0x23;
+                        INT8U uch_AddCmd = 0x66;
+                        INT8U auch_data[2];
+                        auch_data[0] = 0x17; //
+                        auch_data[1] = 0x11;
+                        INT16U uch_len = 2;
+                        CircuBoardCommSend(uch_Cmd,uch_AddCmd,auch_data,uch_len);
+
+                        INT16U uin_Data = 0;
+                        OperateRunFlag(LC_MS_SYN_CLEAR_FLAG);
+
+                        cl_gMethod.SetMsState(0);
+                        cl_DataBufferPool.Init();
+                        AddLogWithTime((CString)(L"RunMethod state ms_start_Step1 send fpga run flag"));
+                        do
+                        {
+                                OperateRunFlag(METHOD_RUN_FLAG);//refsh the data...
+                                MemoryRead(FPGA_REG,METHOD_RUN_FLAG_addr,&uin_Data);
+                                Sleep(5);
+                        }while(uin_Data == 1);
+
+                        AddLogWithTime((CString)(L"RunMethod state ms_start_Step2 downloadmethod to fpga"));
+                        cl_gMethod.DownLoadMethod();
+                        cl_gMethod.SetMsState(1);
+                        m_uchMSRunState = 1;
+
+
+
+                }
+                else if(m_uchOpration == MS_STOP&&m_uchMSRunState==1)
+                {
+
+                        OperateRunFlag(LC_MS_SYN_CLEAR_FLAG);
+                        cl_gMethod.SetMsState(0);
+                        AddLogWithTime((CString)(L"Ms Stop"));
+
+                        m_uchMSRunState = 0;
+                }
+
+        }
+        LeaveCriticalSection(&CriticalSection_AppRun);
+
+        return;
+
+}
+//==================================================================================================
+//| 函数名称 | StateInit
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | 串口模块处理
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | 无
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | void
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | lxlll 2010.08.18
+//==================================================================================================
+
+void CApp::StateInit()
+{
+
+        return;
+
+}
+
+
+void delay(void)
+{
+        INT32U i;
+
+        for (i=0; i<1000; i++)
+        {
+                ;
+        }
+}
+//==================================================================================================
+//| 函数名称 | InitPeripheral
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | 初始化外设  开机初始化一些电压值
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | 无
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | void
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | gan 141126
+//==================================================================================================
+void CApp::InitPeripheral(void)
+{
+        FP32 f_Data = 0.0;
+        INT8U auch_Data[5];
+
+        EncodeFloat(f_Data,auch_Data+1);
+
+        //对应的电压对协议中的寄存器地址
+        auch_Data[0] = 0x02;
+        SetParameterByVoltageList(auch_Data);
+        auch_Data[0] = 0x0a;
+        SetParameterByVoltageList(auch_Data);
+        auch_Data[0] = 0x09;
+        SetParameterByVoltageList(auch_Data);
+        auch_Data[0] = 0x0b;
+        SetParameterByVoltageList(auch_Data);
+        auch_Data[0] = 0x04;
+        SetParameterByVoltageList(auch_Data);
+        auch_Data[0] = 0x03;
+        SetParameterByVoltageList(auch_Data);
+
+        auch_Data[0] = 0x13;
+        SetParameterByVoltageList(auch_Data);
+        auch_Data[0] = 0x00;
+        SetParameterByVoltageList(auch_Data);
+        auch_Data[0] = 0x01;
+        SetParameterByVoltageList(auch_Data);
+        auch_Data[0] = 0x11;
+        SetParameterByVoltageList(auch_Data);
+
+        auch_Data[0] = 0x06;
+        SetParameterByVoltageList(auch_Data);
+        auch_Data[0] = 0x0e;
+        SetParameterByVoltageList(auch_Data);
+        auch_Data[0] = 0X0D;
+        SetParameterByVoltageList(auch_Data);
+        auch_Data[0] = 0x12;
+        SetParameterByVoltageList(auch_Data);
+
+        auch_Data[0] = 0x14;
+        SetParameterByVoltageList(auch_Data);
+        auch_Data[0] = 0x05;
+        SetParameterByVoltageList(auch_Data);
+
+        auch_Data[0] = 0X08;
+        SetParameterByVoltageList(auch_Data);
+        auch_Data[0] = 0x07;
+        SetParameterByVoltageList(auch_Data);
+        auch_Data[0] = 0x10;
+        SetParameterByVoltageList(auch_Data);
+        auch_Data[0] = 0x0f;
+        SetParameterByVoltageList(auch_Data);
+
+        auch_Data[0] = 0x18;
+        SetParameterByVoltageList(auch_Data);
+        auch_Data[0] = 0x19;
+        SetParameterByVoltageList(auch_Data);
+        auch_Data[0] = 0x1a;
+        SetParameterByVoltageList(auch_Data);
+        auch_Data[0] = 0x1b;
+        SetParameterByVoltageList(auch_Data);
+
+        //auch_Data[0] = 0x16;
+        //SetParameterByVoltageList(auch_Data);
+
+
+        return;
+}
+
+
+
+//==================================================================================================
+//| 函数名称 | DestroyMod
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | 完成子模块部分的生成，此函数在主循环前调用
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | 无
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | void
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | lxlll 2010.10.18
+//==================================================================================================
+
+void CApp::PreProcess()//模块工作前作的工作，可以在此函数中创建子模块，设置模块参数等
+{
+        CTm::CreateSystemTimer(20);
+
+        this->SetTimer(IO_CTR_ID,100);//500->100 LZ2016.8.9
+        this->SetTimer(MNT_TIMER_ID,50); //100->50 lyb 2017.04.27
+        this->SetTimer(WRITE_PARATOXML,100); //100ms 执行一次校准参数写
+        this->SetTimer(3,4000);
+        Init();//inital machine...
+        GetSigArrayObject()->SetMsgLen(1000);
+        SystemInit();//
+        cl_puMnt.SetAppObject((QHsm*)this);
+        cl_puMnt.PreProcess();
+        StateInit();
+
+        return ;
+}
+//==================================================================================================
+//| 函数名称 | DistroyProcess
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | 消除时钟，没有被调用
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | 无
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | void
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | lxlll 2010.10.18
+//==================================================================================================
+
+void CApp::DistroyProcess()
+{
+        CTm::DistroySystemTimer();
+}
+
+
+//==================================================================================================
+//| 函数名称 | SystemInit
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | 系统初始化
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | 无
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | 无
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | lxlll 2010.09.06
+//==================================================================================================
+
+INT8U CApp::SystemInit(void)
+{
+        //外部中断初始化...
+
+        /*
+     * 创建中断通知事件(与驱动中事件同名)
+     */
+        DWORD ul_GPIO = 0;
+        WCHAR uch_EventName116[] = _T("EDI_IRQ_Event_116");
+        WCHAR uch_EventName117[] = _T("EDI_IRQ_Event_117");
+
+        //初始化IO...
+
+        ul_pvIONumber = epcIoGetNumber(&ul_pvINumber,
+                                          &ul_pvONumber); 	                /*  获取GPIO的个数             */
+        if(ul_pvIONumber == 0)
+                return 0;
+        OperateSwitch(FPGA_RUN,SWITCH_OFF);
+        //...初始化IO
+
+        st_mEventHandle[0] = CreateEvent(NULL, FALSE, FALSE, uch_EventName116);
+        if(st_mEventHandle[0] == NULL)
+        {
+                return 0;
+        }
+        st_mEventHandle[1] = CreateEvent(NULL, FALSE, FALSE, uch_EventName117);
+        if(st_mEventHandle[1] == NULL)
+        {
+                return 0;
+        }
+    /*
+     * 创建线程, 等待到中断事件后读取DI输入状态
+     */
+        DWORD ul_ID;
+        HANDLE hThread = CreateThread(NULL, 0, IRQReadThread, this, 0, &ul_ID);
+        CloseHandle(hThread);
+
+        st_mEventHandle[2] = CreateEvent(NULL, FALSE, FALSE, NULL);
+        if(st_mEventHandle[2] == NULL)
+        {
+                return 0;
+        }
+        //...外部中断初始化
+        return 1;
+}
+//==================================================================================================
+//| 函数名称 | IRQReadThread
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | 外部中断线程,fall edge active
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | 无
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | 无
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | lxlll 2010.09.06
+//==================================================================================================
+
+DWORD CApp::IRQReadThread(LPVOID pData)
+{
+        CApp *pcl_App = (CApp*)pData;
+        DWORD ul_ObjectID;
+        HANDLE *hEvent = pcl_App->st_mEventHandle;
+
+        INT16U i = 0;
+        INT8U uch_Data = 0;
+        QEvent m;
+        DWORD count_time;
+
+//	SetThreadPriority(GetCurrentThread(),85);
+//		RETAILMSG(1,(_T("epcDemo: Create IRQ_ReadThread sucessed! \r\n")));
+        while(1)
+        {
+                Sleep(1);
+                ul_ObjectID = WaitForMultipleObjects(3, hEvent, FALSE, INFINITE);
+
+                if(ul_ObjectID == WAIT_OBJECT_0) //116,FPGA_ready
+                {
+                        EnterCriticalSection(&CriticalSection_FpgaRdy);
+                        cl_gMethod.uch_pvPassMethod = 1;
+                        LeaveCriticalSection(&CriticalSection_FpgaRdy);
+
+                        AddLogWithTime(L"wait_object_0");
+
+                }
+                else if (ul_ObjectID == (WAIT_OBJECT_0 + 1)) //117,data_ready
+                {
+                        count_test ++;
+                        pcl_App->cl_DataBufferPool.GetDatasFromFPGA();
+                        OperateRunFlag(ARM_READ_DATA_SUCC);
+
+                }
+                else if(ul_ObjectID == (WAIT_OBJECT_0 + 2))
+                {
+                        CString cs_Temp;
+                        cs_Temp = L"IRQReadThread while break";
+                        AddLogWithTime(cs_Temp);
+
+                        /** 等待到线程退出事件，跳出while*/
+                        break;
+                }
+        }
+
+        return 1;
+}
+
+

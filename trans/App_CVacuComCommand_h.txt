@@ -1,0 +1,56 @@
+//==================================================================================================
+//| 文件名称 | Pub_CCrc16.h
+//|--------- |--------------------------------------------------------------------------------------
+//| 文件描述 | Pub_CCrc16.h所对应的头文件
+//|--------- |--------------------------------------------------------------------------------------
+//| 版权声明 | Copyright2009, 聚光科技(FPI)
+//|----------|--------------------------------------------------------------------------------------
+//|  版本    |  时间       |  作者     | 描述
+//|--------- |-------------|-----------|------------------------------------------------------------
+//|  V1.1    | 2009.10.30  | Gang      | 准备单元测试
+//==================================================================================================
+#ifndef PUB_CVACUCOMCOMMAND_H
+#define PUB_CVACUCOMCOMMAND_H
+
+//--------------------------------------------------------------------------------------------------
+#include "TypeDefine.h"
+#include "Pub_CCommand.h"
+#include "Pub_CTime.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+//--------------------------------------------------------------------------------------------------
+
+class CVacuComCommand : public CCommand,public CTm
+{
+public:
+    CVacuComCommand();
+        void OnTimer(INT8U uch_iID);
+
+    ~CVacuComCommand();
+        INT8S Receive(void *pv_iData,INT16U uin_iLen);
+        virtual INT8S Send(void *pv_iData,INT16U uin_iLen,INT8U uch_iPipe);
+
+        virtual INT8S DealCommand(INT8U *puch_iData,INT16U uin_iLen);
+
+private:
+        FP32 CountF(INT8U* uch_Data,INT8U uch_Len);
+
+        void  SetVacuCommErr(void);
+        void  ClrVacuCommErr(void);
+        INT8U GetVacuCommErr(void);
+
+        INT8U uch_ReadVacuState;
+
+        INT8U uch_pvReBackErrorCnt;
+        //INT8U uch_pvCurrentReBackFlag;
+
+
+
+};
+
+#ifdef __cplusplus
+}
+#endif
+#endif /* PUB_CCRC16_H */

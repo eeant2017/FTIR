@@ -1,0 +1,1018 @@
+// lc-ms.cpp : 定义控制台应用程序的入口点。
+//
+
+#include "afx.h"
+#include <windows.h>
+#include <commctrl.h>
+#include <Mmsystem.h>
+#include "lc-ms.h"
+#include "winsock.h"
+#include "Pub_Include.h"
+#include "App_CTCPCommand.h"
+#include "App_CVacuComCommand.h"
+#include "Pub_CAddrVacu.h"
+#include "Pub_CFrameVacu.h"
+
+#include "Pub_CCan.h"
+#include "App_App.h"
+#include "Pub_CUartSever.h"
+#include "Pub_CAsyRe.h"
+#include "Pro_Api.h"
+#include "Pub_Alarm.h"
+
+#include "Pro_FPGA.h"
+#include "gpio_ioctls.h"
+
+#include "Mod_Xml.h"
+#include "Mod_SelfTest.h"
+#include "Mod_Monitor.h"
+#include  "epcLedLib.h"
+#include "Mod_WriteDebugLog.h"
+//#include "gpio_ioctls.h"
+
+
+#if DEBUG_ENABLE
+#include "Pub_CDebug.h"
+CDebug cl_gDebug;
+#endif
+
+SOCKET g_socketM;
+//UINT AcceptThread(void *param);
+//UINT TCPRecvThread(void *param);
+DWORD WINAPI TCPRecvThread(LPVOID lpParameter);
+DWORD WINAPI TCPSendThread(LPVOID lpParameter);
+DWORD WINAPI AcceptThread(LPVOID lpParameter);
+//DWORD WINAPI ManageThread(LPVOID lpParameter);
+DWORD WINAPI CanReceiveThread(LPVOID lpParameter);
+DWORD WINAPI CanSendThread(LPVOID lpParameter);
+INT8S InitUart(INT8U uch_ComNum,INT8U uch_Bnd,INT8U uch_DataBit,INT8U uch_StopBit,INT8U uch_Parity,void* pv_FunCall);
+DWORD WINAPI UartRecvThread(LPVOID lpParameter);
+
+void ArmLedRun(void);
+INT8S InitCan(void);//初始化CAN函数
+
+CApp cl_gApp;
+CRITICAL_SECTION st_gSection;
+INT32U tcpR = 0,canR = 0,canS = 0;
+INT32U timeT = 0;
+INT32U ul_SelfTest = 0; //自检测试标志
+//==================================================================================================
+//| 函数名称 |_tmain
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | 主函数
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | 无
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | 0:error,1:no error
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | lxlll 2011.04.26
+//==================================================================================================
+
+int _tmain(int argc, _TCHAR* argv[])
+{
+        INT16U uin_EventCnt = 0;
+        HANDLE st_TimerHandle = 0;
+        QEvent m;
+        WORD Version;
+        WSADATA wsaData;
+
+
+        int err;
+        INT16U test,test1 = 10;
+        FP32 f_Temp = 0;
+
+        #if DEBUG_ENABLE
+        cl_gDebug.OpenFile((INT8S*)"debug.txt");
+        #endif
+        InitializeCriticalSection(&st_gSection);
+        InitializeCriticalSection(&st_gCanSection);
+
+#pragma region 初始化以太网通信...
+        /*1 初始化socket资源*/
+        Version = MAKEWORD(2,0);
+        err = WSAStartup(Version,&wsaData);
+        if(err != 0)
+        {
+                return -1;//代表失败
+        }
+
+        //2 服务端:构造监听SOCKET,流式SOCKET.
+        g_socketM = socket(AF_INET,SOCK_STREAM,0);
+
+        //3 服务器：配置监听地址和端口:
+        SOCKADDR_IN addrSrv;//服务端: SOCKADDR_IN serverAddr，只适用于internet地址类型
+        addrSrv.sin_addr.S_un.S_addr = htonl(INADDR_ANY);//IP地址对服务器可取任意合法地址INADDR_ANY
+        addrSrv.sin_family = AF_INET;//地址类型
+        addrSrv.sin_port = htons(5000);/*本地监听端口:5000*/
+
+        //4 服务器：绑定SOCKET
+        if(0 != bind(g_socketM,(SOCKADDR*)&addrSrv,sizeof(SOCKADDR)))
+        {
+                return -1;
+        }
+
+        //5 服务端:监听SOCKET.
+        if(0 != listen(g_socketM,1))
+        {
+                return -1;
+        }
+
+        //创建线程:等待客户接入
+        CreateThread(NULL,NULL,AcceptThread, NULL,0,NULL);
+
+        //CreateThread(NULL,NULL,ManageThread,NULL, 0, NULL);
+
+        ////创建线程：MCU主发数据wxb20130918
+        //CreateThread(NULL,NULL,TCPSendThread, NULL, 0, NULL);
+#pragma endregion
+
+#pragma region 初始化Can...
+        if(0 != InitCan())
+        {
+                //RETAILMSG(1,(_T(" InitCan fail!!!!!!!!!!!!!!! \r\n ")));
+                return -1;
+        }
+#pragma endregion
+
+#pragma region 初始化Uart...
+        if( -1 == InitUart(COM2,BAUD9600,DATA_BIT8,STOP_BIT1,PAR_NONE,NULL))
+        {
+                return -1;
+        }
+#pragma endregion
+
+        //...初始化内核定时器
+        //初始化功能模块...
+        cl_gApp.PreProcess();
+        MemoryInit();
+
+
+        cl_gApp.InitPeripheral();
+
+        //lz2016.1.6
+        ul_SelfTest = cl_SelfTest.GPMCTest();
+
+        //总线自检失败后添加报警码
+        if ( ul_SelfTest != 0)
+        {
+                PushAlarmCode( cl_gApp.cl_puMnt.GetMntPara()->st_GPMCCheckErr.uch_FaultCode );
+        }
+
+        //初始化xml文件
+        cl_Xml.LoadConfigFromXml(ul_SelfTest);
+
+
+
+        //OpenLogFile();
+        CString cs_Temp;
+        cs_Temp = L"LogStart";
+        AddLogWithTime(cs_Temp);
+
+        //...初始化功能模块
+        while(1)
+        {
+
+
+                cl_gApp.Process();
+                Sleep(1);
+                ArmLedRun();//arm 核心板指示灯 运行
+
+
+#pragma region 注释掉了
+        //	//test....
+
+        //
+        //
+                /*f_Temp += 0.1;
+                if(f_Temp > 2.5)
+                        f_Temp = 0;
+                f_Temp = rand()%4;
+                WriteDAC121(f_Temp);
+                f_Temp =1.8;*/
+        //
+                /*WriteDAC124(DA124_1,1,f_Temp);
+                Sleep(1);
+                WriteDAC124(DA124_1,2,1);
+                Sleep(1);*/
+                /*WriteDAC124(DA124_1,1,f_Temp);
+                Sleep(1);
+                WriteDAC124(DA124_1,4,f_Temp);
+                Sleep(1);*/
+        //	WriteDAC5546(DA5546_2,1);
+        //	WriteDAC5546(DA5546_1,1);
+
+                /*DACOperate(DA124_3,4,1);
+                OperateRunFlag(EM_PROTECT_SW_OFF);
+                OperateRunFlag(EM_SW_OFF);
+                OperateRunFlag(DANA_SW_ON);
+                OperateRunFlag(NEGION_SW_ON);*/
+
+
+        //	Sleep(1);
+        //	//...test
+        //	extern INT32U ul_Test,ul_Test1;
+        //	tcpR = ul_Test;
+        //	tcpR = ul_Test1;
+        //	//test...
+#pragma endregion
+        }
+
+        //DeleteCriticalSection(&st_gSection);
+        //DeleteCriticalSection(&st_gCanSection);
+        //cl_gApp.DistroyProcess();
+        //#if DEBUG_ENABLE
+        //cl_gDebug.CloseFile();
+
+        //#endif
+
+        return 0;
+}
+
+void ArmLedRun(void)
+{
+        static INT8U uch_LedFlag;
+        static INT32U ul_LastTickCnt = GetTickCount();
+        if ( GetTickCount() - ul_LastTickCnt > 500 )
+        {
+                ul_LastTickCnt = GetTickCount();
+
+                if ( uch_LedFlag == 0)
+                {
+                        uch_LedFlag = 1;
+                        epcLedOn(LED2, 0);
+                        epcLedOff(LED1);
+
+                }
+                else
+                {
+                        uch_LedFlag = 0;
+                        epcLedOff(LED2);
+
+                        if ( ul_SelfTest != 0 )
+                        {
+                                epcLedOn(LED1, 0);
+                        }
+                }
+        }
+}
+//==================================================================================================
+//| 函数名称 |InitCan
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | 初始化CAN
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | 无
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | -1:error,0:no error
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | lxlll 2012.04.26
+//==================================================================================================
+INT8S InitCan(void)
+{
+        int index = 0;
+        HANDLE uin_CanHandle = 0;
+        int sin_Time = 0;
+
+        VCI_INIT_CONFIG *pst_Config = new VCI_INIT_CONFIG;
+        if (VCI_OpenDevice(VCI_WINCE_ONBOARD, CAN_INDEX, 0) != STATUS_OK)
+        {             /*  打开CAN设备                 */
+                return -1;
+        }
+        //配置CAN参数
+        pst_Config->AccCode = 0x0;
+        pst_Config->AccMask = 0xffffffff;
+        pst_Config->Filter = 0;
+        pst_Config->Mode = 0;
+        pst_Config->Timing0 = 0x00;
+        pst_Config->Timing1 = 0x1c;
+        if (VCI_InitCAN(VCI_WINCE_ONBOARD, CAN_INDEX, 0, pst_Config) != STATUS_OK)
+        {
+                             /*  初始化CAN设备               */
+                VCI_CloseDevice(VCI_WINCE_ONBOARD, index);
+                return -1;
+        }
+        if (VCI_StartCAN(VCI_WINCE_ONBOARD, CAN_INDEX, 0) != STATUS_OK)
+        {
+                VCI_CloseDevice(VCI_WINCE_ONBOARD, index);
+                return -1;
+        }
+        uin_CanHandle = CreateThread(NULL,NULL,CanReceiveThread, pst_Config,0,NULL);
+        CeSetThreadQuantum(uin_CanHandle,50);//设置时间片时间
+        uin_CanHandle = CreateThread(NULL,NULL,CanSendThread, NULL,0,NULL);
+        CeSetThreadQuantum(uin_CanHandle,50);
+        return 0;
+
+}
+long Test = 0;
+SOCKET T = 0;
+SOCKET _currentSocket=0;//wxb
+//==================================================================================================
+//| 函数名称 |CanSendThread
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | CAN发送线程函数
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | 无
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | -1:error,0:no error
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | lxlll 2012.04.26
+//==================================================================================================
+DWORD WINAPI CanSendThread(LPVOID lpParameter)
+{
+        VCI_CAN_OBJ pst_Frame[10];
+        VCI_CAN_OBJ pst_Can;
+        INT16S sin_Re = 0;
+        int i = 0;
+        long cnt = 0;
+        INT8U uch_DataCnt = 0;
+        INT8U uch_Index = 0;
+        INT8U uch_SendCnt = 0;
+        char data[] = {0x7D, 0x7B, 0x01, 0xF4, 0x02, 0xF5, 0xf3, 0x35, 0x55, 0x00, 0x00, 0x25, 0x7b, 0x7D, 0x7D};//15个
+        memcpy(pst_Frame[0].Data,data,8);
+        memcpy(pst_Frame[1].Data,&data[8],7);
+        canS = 0;
+        while(1)
+        {
+        //	EnterCriticalSection(&st_gCanSection);
+
+                memset(&pst_Can,0,sizeof(pst_Can));
+                uch_DataCnt = 0;
+                while(q_gCanArray.Pend(&pst_Can) == TQ_OK)
+                {
+                        canS++;
+                        pst_Frame[uch_DataCnt] = pst_Can;
+                        //	pst_Frame[0] = pst_Can;
+                        uch_DataCnt++;
+                        if(uch_DataCnt >= 5)
+                                break;
+
+                        //	if(uch_DataCnt == 2)
+                        //	{
+                                        //memcpy(pst_Frame[0].Data
+                                //	pst_Frame[1].Data[3] = 0x02;
+                                //	pst_Frame[1].Data[4] = 0x47;
+                        /*
+                                        do
+                                        {
+                                                Sleep(1);
+                                        sin_Re = VCI_Transmit(VCI_WINCE_ONBOARD, CAN_INDEX, CAN_ROAD, &pst_Can, 1);
+                                        }
+                                        while(sin_Re != 1);*/
+
+                        /*		if(sin_Re != uch_DataCnt)
+                                        {
+                                                uch_DataCnt = 0;
+                                                break;
+                                        }
+                                        uch_DataCnt = 0;*/
+
+                        //	}
+                }
+                sin_Re = 0;
+                uch_Index = 0;
+                uch_SendCnt = 0;
+                if(uch_DataCnt > 0)
+                {
+                        DWORD count = GetTickCount();
+                        DWORD len = 0;
+                        do
+                        {
+                                //	Sleep(1);
+                                uch_Index += sin_Re;
+                                uch_SendCnt = uch_DataCnt - uch_Index;
+
+                                /* 发送函数 */
+                                //参数DeviceType：设备类型号
+                                //参数DeviceInd：设备索引号
+                                //参数CANInd：第几路CAN
+                                //参数pSend：要发送的数据帧数组的首地址
+                                //参数Len：要发送的数据帧数组的长度
+                                //返回值：实际发送的帧数
+                            sin_Re = VCI_Transmit(VCI_WINCE_ONBOARD, CAN_INDEX, CAN_ROAD, pst_Frame + uch_Index, uch_SendCnt);
+                                //一次发送uch_DataCnt五帧，若失败，则继续发送剩下的帧
+                        }
+                        while(sin_Re != uch_SendCnt);
+
+                        len =uch_DataCnt;
+                        //RETAILMSG(1,(_T("Can Send time cont.......................... = %d  \r\n "),GetTickCount() - count));
+                        //	 RETAILMSG(1，(_T("Count = %d  \r\n "),GetTickCount() - count));
+                        //RETAILMSG(1,(_T("Can Send time len.......................... = %d  \r\n "),len));
+                }
+        //		LeaveCriticalSection(&st_gCanSection);
+                //if(uch_DataCnt > 0)
+                //{
+                //	sin_Re = VCI_Transmit(VCI_WINCE_ONBOARD, CAN_INDEX, CAN_ROAD, pst_Frame, uch_DataCnt);
+                //	if(sin_Re != uch_DataCnt)
+                //	{
+                //		uch_DataCnt = 0;
+
+                //	}
+                //	uch_DataCnt = 0;
+                //}
+                Sleep(1);
+        }
+}
+
+//==================================================================================================
+//| 函数名称 |CanReceiveThread
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | CAN接收线程函数
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | 无
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | -1:error,0:no error
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | lxlll 2012.04.26
+//==================================================================================================
+
+//can接收线程
+DWORD WINAPI CanReceiveThread(LPVOID lpParameter)
+{
+        VCI_CAN_OBJ	st_FrameInfo[50];
+        INT16S sin_Len = 0;
+        INT8S sch_Re = 0;
+        VCI_ERR_INFO st_ErrInfo;
+        INT32U ul_Len = 0;
+        QEvent e;
+        int i = 0;
+
+        CBus **pcl_Bus;
+        pcl_Bus = new CBus*[6];
+        pcl_Bus[0] = new CCan(0x7ff);//2047
+        pcl_Bus[1] = new CFrame(1000,4);
+        pcl_Bus[2] = new CAsy;
+        pcl_Bus[3] = new CCheck;
+        pcl_Bus[4] = new CAddr(0xF5);//MS主板
+        pcl_Bus[5] = new CTCPCommand(NULL);
+        CPipe cl_TcpSPipe(pcl_Bus,6);
+
+        CCan *cl_Can = (CCan*)pcl_Bus[0];
+        STRFrame *pst_Frame = NULL;
+        CTCPSever cl_Tcp(T);
+
+        if(lpParameter != NULL)
+        {
+                VCI_INIT_CONFIG st_Config = *(VCI_INIT_CONFIG*)lpParameter;
+                delete lpParameter;
+
+        }
+        else
+        {
+                return -1;
+        }
+        while(1)
+        {
+                //Sleep(1);
+                //ul_Len = VCI_Receive(VCI_WINCE_ONBOARD, CAN_INDEX, CAN_ROAD, st_FrameInfo,50,5);
+                //if(ul_Len == 0xffffffff)
+                //{
+                //	Sleep(1);
+                //	VCI_ReadErrInfo(VCI_WINCE_ONBOARD, CAN_INDEX, CAN_ROAD, &st_ErrInfo);
+                //}
+                //else if(ul_Len >0)
+                //{
+                //	for(i = 0;i < ul_Len;i++)
+                //	{
+                //		if(st_FrameInfo[i].RemoteFlag == 0)
+                //		{
+                //			/*sch_Re = cl_TcpSPipe.Receive(st_FrameInfo[i].Data,st_FrameInfo[i].DataLen);
+                //			if(sch_Re == SEND_TRANSLATE)
+                //			{
+                //				CCan *cl_Can = (CCan*)pcl_Bus[0];
+                //				e.sig = Q_FEC_SND_SIG;
+                //				e.pData = cl_Can->GetSendFrame();
+                //				cl_gApp.QSendMessage(e);
+                //
+                //			}*/
+
+                //			sch_Re = cl_TcpSPipe.Receive(st_FrameInfo[i].Data,st_FrameInfo[i].DataLen);
+                //			do
+                //			{
+                //				switch(sch_Re)
+                //				{
+                //				case SEND_TRANSLATE:
+                //
+                //
+                //					/*e.sig = Q_FEC_SND_SIG;
+                //					e.pData = cl_Can->GetSendFrame();
+                //					EnterCriticalSection(&st_gSection);
+                //					if(TQ_OK != cl_gApp.QSendMessage(e))
+                //					{
+                //						LeaveCriticalSection(&st_gSection);
+                //						break;
+                //					}
+                //					LeaveCriticalSection(&st_gSection);*/
+
+                //					pst_Frame = cl_Can->GetSendFrame();
+                //					cl_Tcp.SetSocket(T);
+                //					cl_Tcp.Send(pst_Frame->puch_stData,pst_Frame->uin_stLen,SEND_BYSELF);
+                //					sch_Re = cl_TcpSPipe.Receive(NULL,0);
+                //					canR++;
+                //					break;
+                //				case 127:
+                //					sch_Re = 0;
+                //					break;
+                //				case 120:
+                //					sch_Re = cl_TcpSPipe.Receive(NULL,0);
+                //					break;
+                //				default:
+                //					sch_Re = cl_TcpSPipe.Receive(NULL,0);
+                //					break;
+                //				}
+                //			Sleep(1);
+                //
+                //			}
+                //			while(sch_Re != 0);
+                //		}
+                //	}
+                //}
+
+                Sleep(1);
+                {
+                                sch_Re = cl_TcpSPipe.Receive(NULL,0);
+                                if(sch_Re == SEND_TRANSLATE)
+                                {
+//						cl_CanFrame = cl_Tcp->GetSendFrame();
+////memset(test,0,100);
+////	memcpy(test,cl_CanFrame->puch_stData,cl_CanFrame->uin_stLen);
+//						cl_Can.Send(cl_CanFrame->puch_stData,cl_CanFrame->uin_stLen,SEND_BYSELF);
+//						T = socketRecv;
+                                        pst_Frame = cl_Can->GetSendFrame();
+                                        cl_Tcp.SetSocket(T);
+                                        cl_Tcp.Send(pst_Frame->puch_stData,pst_Frame->uin_stLen,SEND_BYSELF);
+                                        //	sch_Re = cl_TcpSPipe.Receive(NULL,0);
+                                //		canR++;
+
+                                //	sch_Re = cl_TcpSPipe.Receive(NULL,0);
+                                }
+                                else if(sch_Re == 127)
+                                {
+                                        /*closesocket(socketRecv);
+                                        uch_RunFlag = FALSE;*/
+                                        sch_Re = 0;
+                                }
+                                else
+                                {
+
+                                }
+
+                }
+
+        }
+        delete pcl_Bus[0];
+        delete pcl_Bus[1];
+        delete pcl_Bus[2];
+        delete pcl_Bus[3];
+        delete pcl_Bus[4];
+        delete pcl_Bus[5];
+        delete pcl_Bus;
+
+
+}
+//DWORD WINAPI ManageThread(LPVOID lpParameter)
+//{
+//
+//	STRMnt *pst_mMntPara = cl_gApp.cl_puMnt.GetMntPara();
+//
+//	Sleep(1000);
+//	////cl_Monitor.TestDataBase();
+//	//CppSQLite3DB db;
+//	//db.open(AADR_SQL_DB);
+//
+//	//TCHAR buf[256];
+//
+//	//if ( db.tableExists(L"LensVoltage"))
+//	//{
+//	//	printf("yes\r\n");
+//	//}
+//	//else
+//	//{
+//	//	db.execDML( L"create table LensVoltage(	\
+//	//				 毛细管KV real,电晕针uA real,锥孔 real,萃取锥 real,	\
+//	//				 传输杆 real,出口透镜 real,Ms1Energy real,Ms2Energy real,\
+//	//				 CID Enter real, CID Exit real ,碰撞能量 real, Ms2Pre real)" );
+//	//	printf("no\r\n");
+//	//}
+//
+//	//db.execDML(L"begin transaction;");
+//
+//
+//
+//	while (1)
+//	{
+//		cl_Monitor.WriteLensVolToDataBase(pst_mMntPara);
+//	/*	memset(buf, 0, sizeof(buf));
+//		wsprintf(buf, L"insert into LensVoltage values ('%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f','%f');"	\
+//			,pst_mMntPara->st_CapillaryV,pst_mMntPara->st_Coro,pst_mMntPara->st_LeachV,pst_mMntPara->st_MusterV		\
+//			,pst_mMntPara->st_HEXPoleV,	pst_mMntPara->st_HV1,pst_mMntPara->st_Ms1IonEnergy,pst_mMntPara->st_Ms2IonEnergy	\
+//			,pst_mMntPara->st_CIDExtrenceV,pst_mMntPara->st_CIDEixtV,pst_mMntPara->st_CIDV,pst_mMntPara->st_Ms2PreV);
+//
+//		printf("write \r\n");
+//		db.execDML(buf);
+//		db.execDML(L"commit transaction;");*/
+//		Sleep(1000);
+//		cl_Monitor.WriteEnvParamToDataBase(pst_mMntPara);
+//		Sleep(1000);
+//	}
+//
+//	return 0;
+//}
+//==================================================================================================
+//| 函数名称 |AcceptThread
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | 以太网连接线程
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | 无
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | -1:error,0:no error
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | lxlll 2012.04.26
+//==================================================================================================
+DWORD WINAPI AcceptThread(LPVOID lpParameter)
+{
+        SOCKET *s_socket = NULL;
+        SOCKADDR_IN addrSrv;
+        char bufferR[4096];//TODO未使用
+        int data_len =0;
+        int len = sizeof(SOCKADDR_IN);
+
+
+        while(1)
+        {
+                Sleep(200);
+                if(s_socket == NULL)
+                {
+                        s_socket = new SOCKET;
+                }
+                //7 服务端:等待客户端接入.
+                *s_socket = accept(g_socketM,(struct sockaddr*)&addrSrv,&len);
+
+                if(*s_socket == INVALID_SOCKET)
+                {
+                        continue;
+                }
+                else
+                {
+                        //创建线程：接收数据，处理数据
+                        CreateThread(NULL,NULL,TCPRecvThread, (void*)s_socket,0,NULL);
+                        T = *s_socket;
+                        s_socket = NULL;
+                }
+        }
+        return 1;
+}
+//long l = 0;
+//==================================================================================================
+//| 函数名称 |TCPRecvThread
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | 以太网接收线程
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | 无
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | -1:error,0:no error
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | lxlll 2012.04.26
+//==================================================================================================
+DWORD WINAPI TCPRecvThread(LPVOID lpParameter)
+
+{
+        SOCKET socketRecv = *(SOCKET*)lpParameter;
+        delete lpParameter;
+        char bufferR[4096];//TODO未使用
+        int data_len =0;
+        INT8U sch_Re = 0,i = 0;
+        INT8U uch_RunFlag = TRUE;
+        QEvent e;
+
+        CCan cl_Can(0xF4);//【MS环境控制板：0xF4】
+
+        CBus **pcl_Bus;
+        pcl_Bus = new CBus*[6];
+        if(pcl_Bus == NULL)
+        {
+                //10 关闭套接字，关闭加载的套接字库(closesocket()/WSACleanup())。
+                closesocket(socketRecv);
+                return 0;
+        }
+        for(i = 0;i < 6;i++)
+        {
+                pcl_Bus[i] = NULL;
+        }
+        pcl_Bus[0] = new CTCPSever(socketRecv);//设置带宽SOCKET_DATA_BUFFER_LEN
+        if(pcl_Bus[0] == NULL)
+        {
+                delete pcl_Bus;
+                closesocket(socketRecv);
+                return 0;
+        }
+        pcl_Bus[1] = new CFrame(SOCKET_DATA_BUFFER_LEN,4);
+        if(pcl_Bus[1] == NULL)
+        {
+                delete pcl_Bus[0];
+                delete pcl_Bus;
+                closesocket(socketRecv);
+                return 0;
+        }
+        pcl_Bus[2] = new CAsy;
+        if(pcl_Bus[2] == NULL)
+        {
+                delete pcl_Bus[0];
+                delete pcl_Bus[1];
+                delete pcl_Bus;
+                closesocket(socketRecv);
+                return 0;
+        }
+        pcl_Bus[3] = new CCheck;
+        if(pcl_Bus[3] == NULL)
+        {
+                delete pcl_Bus[0];
+                delete pcl_Bus[1];
+                delete pcl_Bus[2];
+                delete pcl_Bus;
+                closesocket(socketRecv);
+                return 0;
+        }
+        pcl_Bus[4] = new CAddr(0xF5);//【MS主板：0xF5】，处理转发工作
+        if(pcl_Bus[4] == NULL)
+        {
+                delete pcl_Bus[0];
+                delete pcl_Bus[1];
+                delete pcl_Bus[2];
+                delete pcl_Bus[3];
+                delete pcl_Bus;
+                closesocket(socketRecv);
+                return 0;
+        }
+        pcl_Bus[5] = new CTCPCommand((QHsm*)&cl_gApp);
+        if(pcl_Bus[5] == NULL)
+        {
+                delete pcl_Bus[0];
+                delete pcl_Bus[1];
+                delete pcl_Bus[2];
+                delete pcl_Bus[3];
+                delete pcl_Bus[4];
+                delete pcl_Bus;
+                closesocket(socketRecv);
+                return 0;
+        }
+
+        CPipe cl_TcpSPipe(pcl_Bus,6);//创建通信链路
+        CTCPSever *cl_Tcp = (CTCPSever *)pcl_Bus[0];
+        STRFrame *cl_CanFrame;
+        //INT8U test[100];
+        while(uch_RunFlag)
+        {
+                Sleep(1);
+                {
+                        //8 接收数据，Pub_CTCSever类中实现【接收】【发送】，CTCPCommand类处理业务逻辑
+                        sch_Re = cl_TcpSPipe.Receive(NULL,0);
+                        if(sch_Re == SEND_TRANSLATE)
+                        {//转发
+                                cl_CanFrame = cl_Tcp->GetSendFrame();//获取数据
+//memset(test,0,100);
+//	memcpy(test,cl_CanFrame->puch_stData,cl_CanFrame->uin_stLen);
+
+                                //Can通信：这里只是【压入信号堆栈】，具体由线程CanSendThread实现发送
+                                cl_Can.Send(cl_CanFrame->puch_stData,cl_CanFrame->uin_stLen,SEND_BYSELF);
+                                T = socketRecv;//指导Can通信，保持用户一致
+
+                        //	sch_Re = cl_TcpSPipe.Receive(NULL,0);
+                        }
+                        else if (sch_Re == SEND_BYSELF)
+                        {//wxb20130918TODO
+                                _currentSocket = socketRecv;
+                        }
+                        else if(sch_Re == 127)
+                        {
+                                closesocket(socketRecv);
+                                uch_RunFlag = FALSE;
+                                sch_Re = 0;
+                        }
+                        else
+                        {
+
+                        }
+
+                }
+
+        }
+        delete pcl_Bus[0];
+        delete pcl_Bus[1];
+        delete pcl_Bus[2];
+        delete pcl_Bus[3];
+        delete pcl_Bus[4];
+        delete pcl_Bus[5];
+        delete pcl_Bus;
+
+        return 1;
+}
+DWORD WINAPI TCPSendThread(LPVOID lpParameter)
+{
+        int data_len =0;
+        INT8U sch_Re = 0,i = 0;
+        INT8U uch_RunFlag = TRUE;
+        QEvent e;
+
+        CBus **pcl_Bus;
+        pcl_Bus = new CBus*[6];
+        if(pcl_Bus == NULL)
+        {
+                return 0;
+        }
+        for(i = 0;i < 6;i++)
+        {
+                pcl_Bus[i] = NULL;
+        }
+        pcl_Bus[0] = new CTCPSever(NULL);//设置带宽SOCKET_DATA_BUFFER_LEN
+        if(pcl_Bus[0] == NULL)
+        {
+                delete pcl_Bus;
+                return 0;
+        }
+        pcl_Bus[1] = new CFrame(SOCKET_DATA_BUFFER_LEN,4);
+        if(pcl_Bus[1] == NULL)
+        {
+                delete pcl_Bus[0];
+                delete pcl_Bus;
+                return 0;
+        }
+        pcl_Bus[2] = new CAsy;
+        if(pcl_Bus[2] == NULL)
+        {
+                delete pcl_Bus[0];
+                delete pcl_Bus[1];
+                delete pcl_Bus;
+                return 0;
+        }
+        pcl_Bus[3] = new CCheck;
+        if(pcl_Bus[3] == NULL)
+        {
+                delete pcl_Bus[0];
+                delete pcl_Bus[1];
+                delete pcl_Bus[2];
+                delete pcl_Bus;
+                return 0;
+        }
+        INT8U d[1];
+        d[0] = 0xF3;
+        pcl_Bus[4] = new CAddr(0xF5, 1, d);//【MS主板：0xF5】【PC：0xF3】
+        if(pcl_Bus[4] == NULL)
+        {
+                delete pcl_Bus[0];
+                delete pcl_Bus[1];
+                delete pcl_Bus[2];
+                delete pcl_Bus[3];
+                delete pcl_Bus;
+                return 0;
+        }
+        pcl_Bus[5] = new CTCPCommand((QHsm*)&cl_gApp);
+        if(pcl_Bus[5] == NULL)
+        {
+                delete pcl_Bus[0];
+                delete pcl_Bus[1];
+                delete pcl_Bus[2];
+                delete pcl_Bus[3];
+                delete pcl_Bus[4];
+                delete pcl_Bus;
+                return 0;
+        }
+
+        CPipe cl_TcpSPipe(pcl_Bus,6);//创建通信链路
+        CTCPSever *cl_Tcp = (CTCPSever *)pcl_Bus[0];
+        CTCPCommand *ctcpCommand = (CTCPCommand *)pcl_Bus[5];
+        INT8U test[1];
+        test[0] = 1;
+        INT16U count = 0;
+        while(uch_RunFlag)
+        {
+                Sleep(1000);
+                //TODO建议轮询所有客户端Socket
+                cl_Tcp->SetSocket(_currentSocket);
+                //TODO建议创建消息队列，先进先出，消息结构：【命令码】【附加码】【数据长度】【数据指针】
+                ctcpCommand->SetSCommand(0x32);//命令码
+                ctcpCommand->SetSExCommand(0x55);//附件码
+                cl_TcpSPipe.Send(test, 1, SEND_HOST);
+
+                //RETAILMSG(1,(_T("主动发送次数：【%d】\r\n"),++count));
+        }
+        delete pcl_Bus[0];
+        delete pcl_Bus[1];
+        delete pcl_Bus[2];
+        delete pcl_Bus[3];
+        delete pcl_Bus[4];
+        delete pcl_Bus[5];
+        delete pcl_Bus;
+
+        return 1;
+}
+
+//==================================================================================================
+//| 函数名称 |TCPRecvThread
+//|----------|--------------------------------------------------------------------------------------
+//| 函数功能 | 以太网接收线程
+//|----------|--------------------------------------------------------------------------------------
+//| 输入参数 | 无
+//|----------|--------------------------------------------------------------------------------------
+//| 返回参数 | -1:error,0:no error
+//|----------|--------------------------------------------------------------------------------------
+//| 函数设计 | lxlll 2012.04.26
+//==================================================================================================
+static HANDLE hGPIOFile = INVALID_HANDLE_VALUE;
+INT8S InitUart(INT8U uch_ComNum,INT8U uch_Bnd,INT8U uch_DataBit,INT8U uch_StopBit,INT8U uch_Parity,void* pv_FunCall)
+{
+        INT8U* puch_Com = NULL;
+        DWORD GpioBuffer[2];
+
+
+        if (epcSerialOpen1(uch_ComNum, uch_Bnd, uch_DataBit, uch_StopBit, uch_Parity)  != COM_OK)
+        {
+                return -1;		                                                    /* 若打开串口失败,则直接返回    */
+        }
+        else
+        {
+                /*
+                *  打开串口线程接收数据
+                */
+/*		if ( !epcSerialRcvDataTread(uch_ComNum, 100, 10, (PFUN_COMRCV)pv_FunCall, NULL) )
+                {
+                        epcSerialClose(uch_ComNum);
+                }*/
+
+                hGPIOFile = CreateFile(GPIO_DEVICE_NAME,                           /*  打开 GPIO 驱动              */
+                        GENERIC_READ | GENERIC_WRITE,
+                        FILE_SHARE_READ | FILE_SHARE_WRITE,
+                        NULL,
+                        OPEN_EXISTING,
+                        0,
+                        0);
+                if (hGPIOFile == INVALID_HANDLE_VALUE)
+                {
+                        return 0;
+                }
+
+                GpioBuffer[0] = 145;												/*  要初始化的引脚				*/
+                GpioBuffer[1] = GPIO_DIR_OUTPUT;									/*  初始化的模式				*/
+                if (!DeviceIoControl(hGPIOFile, IOCTL_GPIO_SETMODE, &GpioBuffer, 8, NULL, 0, NULL, NULL))
+                {
+                        return 0;
+                }
+
+                puch_Com = new INT8U;
+                *puch_Com = uch_ComNum;
+                if(FALSE == CreateThread(NULL,NULL,UartRecvThread, (void*)puch_Com,0,NULL))
+                {
+                        delete puch_Com;
+                        epcSerialClose(uch_ComNum);
+                        return -1;
+                }
+                else
+                {
+                        puch_Com = NULL;
+                        return 0;
+                }
+        }
+        return 0;
+}
+DWORD WINAPI UartRecvThread(LPVOID lpParameter)
+{
+        INT8U uch_Com = *(INT8U*)lpParameter;//传入端口号...
+        INT16U uin_DataLen =0;
+        INT8U sch_Re = 0;
+        CBus **pcl_Bus;
+        INT8U uch_Addr = 0xF2;
+        delete (INT8U*)lpParameter;
+        pcl_Bus = new CBus*[5];
+        pcl_Bus[0] = new CUartSever(uch_Com,hGPIOFile,100);
+        pcl_Bus[1] = new CFrameVacu(1000,4);
+        pcl_Bus[2] = new CAsyRe(20,(QHsm*)&cl_gApp);
+        //pcl_Bus[3] = new CCheck;
+        pcl_Bus[3] = new CAddrVacu(253);//0xFD：真空规地址
+        pcl_Bus[4] = new CVacuComCommand;//由CVacuComCommand.OnTimer()定时器，定时发送[查询命令]
+        CPipe cl_UartSPipe(pcl_Bus,5);
+        if(lpParameter != NULL)
+        {
+                lpParameter = NULL;
+                delete lpParameter;
+                while(1)
+                {
+                        sch_Re = cl_UartSPipe.Receive(NULL,0);
+                        if(sch_Re == SEND_TRANSLATE)
+                        {
+                                //transmit data...
+                                //...transmit data
+                        }
+                        else if(sch_Re < 0)
+                        {
+                                Sleep(1);
+                        }
+                        Sleep(1);
+                }
+        }
+                delete pcl_Bus[0];
+                delete pcl_Bus[1];
+                delete pcl_Bus[2];
+                delete pcl_Bus[3];
+                delete pcl_Bus[4];
+                delete pcl_Bus[5];
+                delete pcl_Bus;
+                return 0;
+}
